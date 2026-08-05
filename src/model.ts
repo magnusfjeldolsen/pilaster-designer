@@ -1,7 +1,10 @@
 // Felles geometrimodell: bygger en liste ElementSpec fra input + beregning.
 // Konsumeres BADE av three.js-visningen og IFC-eksporten -> ett sannhetsgrunnlag.
 // Koordinater i mm. Z opp. OK betong = z=0 (betong gaar nedover, negativ z).
-// X = skjaerretning (V), Y = tverretning.
+// Ringmuren loper langs Y. Skjaerkraften V virker PARALLELT med ringmuren -> +Y.
+//   Y = skjaerretning (V) = langs ringmur -> pilastermaal h  (dybde ∥ V, gir d_eff/z)
+//   X = paa tvers av ringmuren (murtykkelse) -> pilastermaal b (bredde ⊥ V)
+// Det er b som maa vaere stoerre enn t_wall for at pilasteren skal stikke ut.
 
 import type { Inputs, Results } from "./calc";
 
@@ -56,18 +59,19 @@ function roundedRect(hx: number, hy: number, z: number, rb: number, k = 6): Vec3
   return pts;
 }
 
-/** Senterforskyvning av pilasteren langs X (skjaerretningen).
+/** Senterforskyvning av pilasteren langs X = paa tvers av ringmuren.
  *  "ensidig": bakre flate flukter med ringmurens bakside (x = -t_wall/2), slik at
- *  fortykkelsen h - t_wall stikker ut paa forsiden. "sentrisk": symmetrisk om muren.
+ *  fortykkelsen b - t_wall stikker ut paa forsiden. "sentrisk": symmetrisk om muren.
+ *  Maalet paa tvers av muren er b (⊥ V), siden V gaar langs muren.
  *  Delt med 2D-snittet slik at plan og 3D viser samme geometri. */
-export function pilasterOffsetX(v: Pick<Inputs, "h" | "t_wall" | "pil_pos">): number {
-  return v.pil_pos === "sentrisk" ? 0 : (v.h - v.t_wall) / 2;
+export function pilasterOffsetX(v: Pick<Inputs, "b" | "t_wall" | "pil_pos">): number {
+  return v.pil_pos === "sentrisk" ? 0 : (v.b - v.t_wall) / 2;
 }
 
 export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   const els: ElementSpec[] = [];
-  const hx = v.h / 2, hy = v.b / 2;           // pilaster half dims (X=h, Y=b)
-  const Lw = Math.max(3 * v.b, v.b + 2 * v.t_wall + 400); // ringmur-lengde (Y)
+  const hx = v.b / 2, hy = v.h / 2;           // halve pilastermaal: X = b (⊥V), Y = h (∥V)
+  const Lw = Math.max(3 * v.h, v.h + 2 * v.t_wall + 400); // ringmur-lengde langs Y
   const tFoot = 400;
   const tbp = 25;                              // bunnplatetykkelse
   const sx = v.s_bolt / 2, sy = v.s_bolt / 2;  // boltmonster (kvadrat)
@@ -87,7 +91,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   };
 
   // Pilasteren er normalt en ENSIDIG fortykkelse av ringmuren: den ene flaten
-  // flukter med ringmurveggen, resten (h - t_wall) stikker ut. Ringmuren staar i
+  // flukter med ringmurveggen, resten (b - t_wall) stikker ut. Ringmuren staar i
   // x=0; hele pilasterlokket (betong, stal, stag, armering) forskyves x0.
   const x0 = pilasterOffsetX(v);
   const shift = (g: Geom): Geom =>
@@ -106,13 +110,13 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   push("ringwall", "Ringmur", "IfcWall", "wall",
     { kind: "box", size: [v.t_wall, Lw, v.H_wall], center: [0, 0, -v.H_wall / 2] });
   pushP("pilaster", "Pilaster", "IfcColumn", "concrete",
-    { kind: "box", size: [v.h, v.b, v.H_pil], center: [0, 0, -v.H_pil / 2] });
+    { kind: "box", size: [v.b, v.h, v.H_pil], center: [0, 0, -v.H_pil / 2] });
 
   // ---- Stal: bunnplate + soylestubbe ----
   pushP("baseplate", "Bunnplate stalsoyle", "IfcPlate", "steel",
     { kind: "box", size: [v.a1p, v.a1p, tbp], center: [0, 0, tbp / 2] });
   pushP("colstub", "Stalsoyle (stubbe)", "IfcMember", "steel",
-    { kind: "box", size: [v.h * 0.45, v.b * 0.45, 300], center: [0, 0, tbp + 150] });
+    { kind: "box", size: [v.b * 0.45, v.h * 0.45, 300], center: [0, 0, tbp + 150] });
 
   // ---- Gjengestag (4x) ----
   const rodTop = tbp + 40, rodBot = -v.h_ef;
@@ -153,9 +157,11 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   }
 
   // ---- Skjaernokk ----
+  // Nokken tar V som betongtrykk paa flaten vinkelrett paa V -> tynn langs Y (=V),
+  // bredde w_lug paa tvers (X). A_lug = w_lug * h_emb er den projiserte flaten.
   if (v.use_lug)
     pushP("lug", "Skjaernokk", "IfcPlate", "lug",
-      { kind: "box", size: [20, v.w_lug, v.h_emb + v.t_grout], center: [0, 0, -(v.h_emb + v.t_grout) / 2] });
+      { kind: "box", size: [v.w_lug, 20, v.h_emb + v.t_grout], center: [0, 0, -(v.h_emb + v.t_grout) / 2] });
 
   return els;
 }

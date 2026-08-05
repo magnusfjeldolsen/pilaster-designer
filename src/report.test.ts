@@ -69,8 +69,11 @@ describe("buildReport()", () => {
         .find((r) => r.kind === "calc" && r.sym === "e_pil");
       return row && row.kind === "calc" ? row.res : "";
     };
-    expect(ecc(DEFAULTS)).toBe("75 mm");                                   // (400-250)/2
+    expect(ecc(DEFAULTS)).toBe("75 mm");                                   // (b 400-250)/2
     expect(ecc({ ...DEFAULTS, pil_pos: "sentrisk" })).toBe("0 mm");
+    // eksentrisiteten foelger b (⊥V), ikke h (∥V)
+    expect(ecc({ ...DEFAULTS, b: 500 })).toBe("125 mm");
+    expect(ecc({ ...DEFAULTS, h: 900 })).toBe("75 mm");
   });
 
   it("skjaernokk-rader kommer kun naar nokken er aktiv", () => {
@@ -97,5 +100,14 @@ describe("2D-tegninger", () => {
     expect(drawPlan(DEFAULTS, R, "shear")).toContain("e_pil = 75 mm");
     const c = { ...DEFAULTS, pil_pos: "sentrisk" as const };
     expect(drawPlan(c, compute(c), "shear")).toContain("sentrisk");
+  });
+
+  it("utstikket i planen foelger b (⊥V)", () => {
+    const w = { ...DEFAULTS, b: 550 };
+    expect(drawPlan(w, compute(w), "shear")).toContain("utstikk 300 mm");
+  });
+
+  it("planen merker V som parallell med ringmuren", () => {
+    expect(drawPlan(DEFAULTS, R, "shear")).toContain("∥ ringmur");
   });
 });

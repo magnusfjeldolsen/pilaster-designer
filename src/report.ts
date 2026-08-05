@@ -42,8 +42,10 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
   { title: "Geometri", items: [
     M("H_pil", "Pilasterhøyde", "mm", "pilasterhøyde (OK → såle)"),
     M("H_wall", "Ringmurhøyde", "mm", "ringmurhøyde"),
-    M("b", "Bredde b (⊥V)", "mm", "pilasterbredde (⊥ skjær)"),
-    M("h", "Dybde h (∥V)", "mm", "pilasterdybde (∥ skjær)"),
+    M("b", "Bredde b (⊥V)", "mm",
+      "pilastermål på tvers av ringmuren (⊥ skjær) — må være > t_wall for at pilasteren skal stikke ut"),
+    M("h", "Dybde h (∥V)", "mm",
+      "pilastermål langs ringmuren (∥ skjær) — gir d_eff og indre arm z"),
     M("t_wall", "Ringmurtykkelse", "mm", "tykkelse ringmur"),
     M("pil_pos", "Plassering i mur", "–",
       "ensidig: én flate flukter med ringmuren; sentrisk: symmetrisk om murlivet",
@@ -110,7 +112,7 @@ export const FML: Record<string, string> = {
   "N_re,A": "T_mutter+N_Ed,re·V", "N_re,B": "T_plate+N_Ed,re·V",
   "N_Ed,re": "max(N_re,A; N_re,B)", "N_Rd,re": "A_s,re·f_yk/γ_Ms,re",
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
-  "e_pil": "(h−t_wall)/2",
+  "e_pil": "(b−t_wall)/2",
 };
 
 /** Standardhenvisning per utgangssymbol. */
@@ -150,8 +152,8 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("f_bd", `2,25·${g.eta1}·1,0·${f3(R.fctd)}`, `${f2(R.fbd)} MPa`);
   D("f_yd", `${g.fyk}/${g.g_s}`, `${f0(R.fyd)} MPa`);
 
-  G("Pilastergeometri");
-  D("e_pil", g.pil_pos === "sentrisk" ? "sentrisk plassering" : `(${g.h}−${g.t_wall})/2`,
+  G("Pilastergeometri (V virker parallelt med ringmuren)");
+  D("e_pil", g.pil_pos === "sentrisk" ? "sentrisk plassering" : `(${g.b}−${g.t_wall})/2`,
     `${f0(pilasterEcc(g))} mm`);
 
   G("Bolt fra dimensjon & klasse");
@@ -233,7 +235,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
 
 /** Eksentrisitet pilaster ift. ringmursenter (samme uttrykk som 3D-modellen). */
 export function pilasterEcc(v: Inputs): number {
-  return v.pil_pos === "sentrisk" ? 0 : (v.h - v.t_wall) / 2;
+  return v.pil_pos === "sentrisk" ? 0 : (v.b - v.t_wall) / 2;
 }
 
 export const ASSUMPTIONS_HTML = `
@@ -252,10 +254,14 @@ export const ASSUMPTIONS_HTML = `
  <li><b>Skjærnokk (shear lug):</b> betongtrykk foran nokk på <b>projisert areal</b> <code>A_lug=w·h_emb</code>,
      NS-EN 1992-1-1 §6.7 (evt. ACI 349 App. D / 35°-utbruddskjegle). Nokk reduserer hengarmen til
      <code>e_s*=t_grout+h_emb/2</code>. Kan slås av/på.</li>
- <li><b>Pilastergeometri:</b> Pilasteren er normalt en <b>ensidig</b> fortykkelse av ringmuren — én flate
-     flukter med veggen, og <code>h−t_wall</code> stikker ut. Eksentrisiteten
-     <code>e_pil=(h−t_wall)/2</code> gjelder kun geometri/uttegning; kapasitetsmodellen forutsetter
-     leddet søylefot uten moment, og påvirkes derfor ikke av plasseringen.</li>
+ <li><b>Pilastergeometri og lastretning:</b> Skjærkraften <code>V_Ed</code> forutsettes å virke
+     <b>parallelt med ringmuren</b>. Dermed er <code>h</code> (∥V) målet langs muren — det som gir
+     <code>d_eff</code> og indre arm <code>z</code> — mens <code>b</code> (⊥V) er målet på tvers av muren.
+     Pilasteren er normalt en <b>ensidig</b> fortykkelse: én flate flukter med veggen, og
+     <code>b−t_wall</code> stikker ut, med eksentrisitet <code>e_pil=(b−t_wall)/2</code>. Eksentrisiteten
+     gjelder kun geometri/uttegning; kapasitetsmodellen forutsetter leddet søylefot uten moment og
+     påvirkes derfor ikke av plasseringen. Skjær på tvers av muren (og samtidig skjær i to retninger)
+     er <b>ikke</b> dekket av denne versjonen.</li>
  <li><b>Materialer:</b> Betong C35 (f_ck=35 MPa, f_ctk,0.05=2,25 MPa — tab. 3.1); armering B500NC
      (f_yk=500 MPa); γ_c=1,5, γ_s=1,15.</li>
  <li><b>Modellforutsetninger:</b> Leddet søylefot (aksial ± og skjær, uten moment). Bøyler tar spaltestrekk

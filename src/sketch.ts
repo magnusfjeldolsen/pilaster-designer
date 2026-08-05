@@ -71,16 +71,17 @@ const svg = (w: number, h: number, body: string, title: string) =>
 export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
   const W = 560, H = 340, cx = W / 2, yTop = 70;
   const x0 = pilasterOffsetX(v);
-  // verdensakser: X = pilasterdybde (∥ skjær) -> skjerm-Y ; Y = bredde b -> skjerm-X
-  const xLo = Math.min(-v.t_wall / 2, x0 - v.h / 2);
-  const xHi = Math.max(v.t_wall / 2, x0 + v.h / 2);
-  const sc = Math.min(170 / Math.max(xHi - xLo, 1), 190 / Math.max(v.b, 1), 0.5);
+  // Verdensakser: X = paa tvers av ringmuren (mal b) -> skjerm-Y (nedover)
+  //               Y = langs ringmuren = skjaerretning V (mal h) -> skjerm-X (hoyre)
+  const xLo = Math.min(-v.t_wall / 2, x0 - v.b / 2);
+  const xHi = Math.max(v.t_wall / 2, x0 + v.b / 2);
+  const sc = Math.min(170 / Math.max(xHi - xLo, 1), 190 / Math.max(v.h, 1), 0.5);
   const sy = (wx: number) => yTop + (wx - xLo) * sc;   // verdens-X -> skjerm-Y
   const sxx = (wy: number) => cx + wy * sc;            // verdens-Y -> skjerm-X
 
   const wallT = sy(-v.t_wall / 2), wallB = sy(v.t_wall / 2);
-  const pilT = sy(x0 - v.h / 2), pilB = sy(x0 + v.h / 2);
-  const pL = sxx(-v.b / 2), pR = sxx(v.b / 2);
+  const pilT = sy(x0 - v.b / 2), pilB = sy(x0 + v.b / 2);
+  const pL = sxx(-v.h / 2), pR = sxx(v.h / 2);
   const out: string[] = [];
 
   // ringmur i full bredde
@@ -95,7 +96,7 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
     out.push(ln(pR + 40, wallB, pR + 40, pilB, C.crit, 1, "3 3"));
     out.push(arrow(pR + 40, wallB, pR + 40, pilB, C.crit, 1.4));
     out.push(tx(pR + 46, (wallB + pilB) / 2 + 4,
-      `utstikk ${(v.h - v.t_wall).toFixed(0)} mm`, C.crit, 10, "start", "700"));
+      `utstikk ${(v.b - v.t_wall).toFixed(0)} mm`, C.crit, 10, "start", "700"));
     out.push(tx(pR + 46, (wallB + pilB) / 2 + 17,
       `e_pil = ${x0.toFixed(0)} mm`, C.crit, 9, "start"));
   } else {
@@ -149,9 +150,11 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
   out.push(ln(pcx - 6.4, pcy - 6.4, pcx + 6.4, pcy + 6.4, C.acc, 2));
   out.push(ln(pcx - 6.4, pcy + 6.4, pcx + 6.4, pcy - 6.4, C.acc, 2));
   out.push(tx(pcx + 13, pcy - 11, "N", C.acc, 12, "start", "700"));
+  // V virker PARALLELT med ringmuren -> langs skjerm-X
   const vCol = mech === "shear" ? C.shear : C.acc;
-  out.push(arrow(pcx, pcy, pcx, pcy + 46, vCol, mech === "shear" ? 3 : 2));
-  out.push(tx(pcx + 6, pcy + 52, "V", vCol, 12, "start", "700"));
+  out.push(arrow(pcx, pcy, pcx + 52, pcy, vCol, mech === "shear" ? 3 : 2));
+  out.push(tx(pcx + 57, pcy + 4, "V", vCol, 12, "start", "700"));
+  out.push(tx(pcx + 57, pcy + 17, "∥ ringmur", vCol, 9, "start"));
 
   if (mech === "shear") out.push(dim(bxL, midY + 18, bxR, midY + 18, "z ≈ 0,9·d", C.shear, true));
   if (mech === "lap" || mech === "split")
@@ -161,8 +164,9 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
       out.push(arrow(x, y, x + (x < pcx ? -1 : 1) * Math.max(10, bxR - pcx - 8), y, C.split, 1.6));
 
   out.push(tx(cx, 22, "PLAN — pilaster i ringmur", C.ink, 12, "middle", "700"));
-  out.push(tx(cx, 38, `b = ${v.b.toFixed(0)} · h = ${v.h.toFixed(0)} · t_wall = ${v.t_wall.toFixed(0)} mm`,
-    C.ink3, 10));
+  out.push(tx(cx, 38,
+    `h = ${v.h.toFixed(0)} (∥V, langs mur) · b = ${v.b.toFixed(0)} (⊥V, på tvers) · ` +
+    `t_wall = ${v.t_wall.toFixed(0)} mm`, C.ink3, 10));
   return svg(W, H, out.join(""), "Plan av pilaster i ringmur");
 }
 
@@ -174,7 +178,8 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
   const Hmax = Math.max(v.H_pil, v.H_wall, 1), s = Math.min(250 / Hmax, 0.5);
   const pilBot = top + v.H_pil * s, wallBot = top + v.H_wall * s;
   const foot = Math.max(pilBot, wallBot), footB = foot + 26;
-  const pxB = Math.max(120, Math.min(210, v.b * 0.42)), L = cx - pxB / 2, Rr = cx + pxB / 2;
+  // vannrett akse = langs ringmuren = skjaerretningen, dvs. pilastermaalet h (∥V)
+  const pxB = Math.max(120, Math.min(210, v.h * 0.42)), L = cx - pxB / 2, Rr = cx + pxB / 2;
   const out: string[] = [];
 
   out.push(tx(36, 22, "SNITT — langs ringmur", C.ink, 12, "start", "700"));
@@ -244,10 +249,11 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
 
   // skjærnokk
   const lgy = top + Math.max(4, v.t_grout * s);
-  const lw = Math.max(18, v.w_lug * 0.42), le = Math.max(14, v.h_emb * s);
+  // nokken sees PAA KANT i dette snittet (bredden w_lug staar vinkelrett paa V)
+  const lw = 12, le = Math.max(14, v.h_emb * s);
   if (R.use_lug) {
     out.push(rect(cx - lw / 2, lgy, lw, le, C.ink3, C.ink, 1.4));
-    out.push(tx(cx, lgy + le + 11, "skjærnokk", C.ink2, 9));
+    out.push(tx(cx, lgy + le + 11, "skjærnokk (på kant)", C.ink2, 9));
   }
 
   // mekanisme-overlegg
