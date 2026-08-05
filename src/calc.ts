@@ -26,6 +26,10 @@ export interface Inputs {
   anchor: AnchorKind; a_anch: number; t_pl: number; fy_pl: number;
   // forankring uten endeforankring (NS-EN 1992-1-1 §8.4)
   anch_shape: "rett" | "krok"; K_anch: number; alpha4: number; p_tr: number;
+  // heftkoeffisient for gjengestag: f_bd = k_bd * eta1 * eta2 * f_ctd.
+  // 2,25 gjelder kamstaal; for gjengestenger anbefaler Betongelementboka B19
+  // pkt. 19.3.4 verdien 1,90 (se ASSUMPTIONS i report.ts).
+  k_bd_bolt: number;
   // armering
   phi_b: number; n_ben: number; s_b: number; phi_v: number; n_v: number;
   // skjaernokk
@@ -49,7 +53,7 @@ export const DEFAULTS: Inputs = {
   a1p: 300, s_bolt: 200, e_h: 120, h_ef: 500, e_s: 150, theta: 45, c_nom: 50,
   e_p: 75,
   n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
-  anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0,
+  anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0, k_bd_bolt: 1.9,
   phi_b: 12, n_ben: 2, s_b: 100, phi_v: 25, n_v: 8,
   use_lug: false, w_lug: 150, h_emb: 80, t_grout: 30, k_lug: 2.0,
   fck: 35, a_cc: 0.85, a_ct: 0.85, g_c: 1.5, fctk: 2.25,
@@ -92,10 +96,14 @@ export function compute(g: Inputs): Results {
   const BS = BOLT_SIZES[g.boltsize] ?? BOLT_SIZES.M30;
   const d_bolt = BS.d, P_bolt = BS.P;
   const As_bolt = PI / 4 * (d_bolt - 0.9382 * P_bolt) ** 2;
-  // heftfasthet er diameteravhengig gjennom eta2 -> egen f_bd per stangtype
+  // heftfasthet er diameteravhengig gjennom eta2 -> egen f_bd per stangtype.
+  // Kamstaal: k_bd = 2,25 (EC2 §8.4.2). Gjengestag: k_bd fra input (default 1,90),
+  // fordi 2,25 for kamstaal gjelder paa Ø_nom mens heftdiameteren er 1,10-1,20*Ø_nom;
+  // for gjengestang er Ø_heft = Ø_nom (Betongelementboka B19 pkt. 19.3.4).
   const eta2_b = eta2Of(g.phi_b), eta2_v = eta2Of(g.phi_v), eta2_bolt = eta2Of(d_bolt);
-  const fbdOf = (e2: number) => 2.25 * g.eta1 * e2 * fctd;
-  const fbd = fbdOf(eta2_v), fbd_b = fbdOf(eta2_b), fbd_bolt = fbdOf(eta2_bolt);
+  const fbdOf = (e2: number, k = 2.25) => k * g.eta1 * e2 * fctd;
+  const fbd = fbdOf(eta2_v), fbd_b = fbdOf(eta2_b);
+  const fbd_bolt = fbdOf(eta2_bolt, g.k_bd_bolt);
   const gr = String(g.grade).split("."), gX = +gr[0], gY = +gr[1];
   const fub = gX * 100, fyb = fub * gY / 10;
   const gMs_b = Math.max(1.2 * fub / fyb, 1.4);

@@ -149,3 +149,23 @@ describe("compute() – heftforankring av stag (EC2 §8.4)", () => {
     expect(deep.u_bond).toBeLessThan(1);
   });
 });
+
+describe("compute() – heftkoeffisient for gjengestang (BEB B19 19.3.4)", () => {
+  const v: Inputs = { ...DEFAULTS, anchor: "ingen" };
+  it("default k_bd = 1,90 gir f_bd = 1,077 * f_ctk,0,05", () => {
+    expect(DEFAULTS.k_bd_bolt).toBe(1.9);
+    const R = compute(v);
+    expect(R.fbd_bolt).toBeCloseTo(1.077 * v.fctk, 2);           // 1,90*0,85/1,5 = 1,077
+    expect(R.fbd_bolt / R.fbd).toBeCloseTo(1.9 / 2.25, 6);       // 0,84 av kamstaal
+  });
+  it("kamstaal (boyle/oppstikk) beholder 2,25", () => {
+    const R = compute(v);
+    expect(R.fbd).toBeCloseTo(2.25 * v.eta1 * R.eta2_v * R.fctd, 6);
+    expect(R.fbd_b).toBeCloseTo(2.25 * v.eta1 * R.eta2_b * R.fctd, 6);
+  });
+  it("k_bd = 2,25 gir full kamstaalsverdi og kortere l_bd", () => {
+    const full = compute({ ...v, k_bd_bolt: 2.25 });
+    expect(full.fbd_bolt).toBeCloseTo(full.fbd, 6);
+    expect(full.bond.lbd).toBeLessThan(compute(v).bond.lbd);
+  });
+});

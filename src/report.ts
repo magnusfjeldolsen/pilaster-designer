@@ -13,7 +13,7 @@ export interface DocGroup { title: string; rows: DocRow[] }
 export const SYM: Record<string, string> = {
   H_pil: "H_pilaster", H_wall: "H_ringmur",
   b: "b", h: "h", t_wall: "t_wall", e_p: "e_p",
-  anch_shape: "stangform", K_anch: "K", alpha4: "α_4", p_tr: "p",
+  anch_shape: "stangform", K_anch: "K", alpha4: "α_4", p_tr: "p", k_bd_bolt: "k_bd,stag",
   a1p: "a_1,plate", s_bolt: "s_bolt", e_h: "e_h",
   h_ef: "h_ef", e_s: "e_s", theta: "θ", c_nom: "c_nom",
   n_bolt: "n_bolt", boltsize: "bolt", grade: "klasse", anchor: "endeforankr.",
@@ -74,7 +74,10 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
     M("K_anch", "K", "–",
       "tverrarmering, EC2 fig. 8.4: 0,1 stang inne i bøyd bøyle · 0,05 tverrarmering utenfor · 0"),
     M("alpha4", "α₄", "–", "sveiset tverrarmering: 1,0 uten sveis, 0,7 med"),
-    M("p_tr", "p", "MPa", "tverrtrykk vinkelrett på spaltebruddflaten") ] },
+    M("p_tr", "p", "MPa", "tverrtrykk vinkelrett på spaltebruddflaten"),
+    M("k_bd_bolt", "k_bd stag", "–",
+      "heftkoeffisient i f_bd = k_bd·η₁·η₂·f_ctd. 2,25 gjelder kamstål (EC2 §8.4.2); " +
+      "1,90 anbefales for gjengestang (Betongelementboka B19 pkt. 19.3.4)") ] },
   { title: "Armering", items: [
     M("phi_b", "Bøyle Ø", "mm", "bøylediameter"),
     M("n_ben", "Bøyleben n_ben", "stk", "bøyleben som krysser bruddflate/lag"),
@@ -122,7 +125,7 @@ export const FML: Record<string, string> = {
   "N_Ed,re": "max(N_re,A; N_re,B)", "N_Rd,re": "A_s,re·f_yk/γ_Ms,re",
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
   "e_p": "inndata", "utstikk": "e_p+b/2−t_wall/2", "a_eff": "√A_lastflate",
-  "η_2": "1,0 (φ≤32) ellers (132−φ)/100", "f_bd,stag": "2,25·η₁·η₂·f_ctd",
+  "η_2": "1,0 (φ≤32) ellers (132−φ)/100", "f_bd,stag": "k_bd·η₁·η₂·f_ctd",
   "σ_sd,stag": "N_Ed,t/(n_bolt·A_s,bolt)", "l_b,rqd,stag": "(d/4)·(σ_sd/f_bd)",
   "c_d": "min(a/2; c₁; c)", "α_1": "1,0 rett / 0,7 krok",
   "α_2": "1−0,15(c_d−φ)/φ", "α_3": "1−K·λ", "α_4": "sveiset tverrarmering",
@@ -148,7 +151,7 @@ export const REF: Record<string, string> = {
   "N_re,A": "superposisjon", "N_re,B": "superposisjon",
   "N_Ed,re": "dim.", "N_Rd,re": "EC2-4 §7.2.1.9", "N_Rd,a": "EC2-4 §7.2.1/EC2 §8.4",
   "s_b,maks": "dim.", "e_p": "geometri", "utstikk": "geometri", "a_eff": "EC2 §6.7",
-  "η_2": "EC2 §8.4.2", "f_bd,stag": "EC2 §8.4.2", "σ_sd,stag": "EC2 §8.4.3",
+  "η_2": "EC2 §8.4.2", "f_bd,stag": "BEB B19 19.3.4", "σ_sd,stag": "EC2 §8.4.3",
   "l_b,rqd,stag": "EC2 §8.4.3", "c_d": "EC2 §8.4.4 fig. 8.3", "α_1": "EC2 tab. 8.2",
   "α_2": "EC2 tab. 8.2", "α_3": "EC2 tab. 8.2", "α_4": "EC2 tab. 8.2", "α_5": "EC2 tab. 8.2",
   "λ": "EC2 §8.4.4", "l_b,min": "EC2 §8.4.4 (8.6)", "l_bd": "EC2 §8.4.4 (8.4)",
@@ -220,7 +223,8 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
     const B = R.bond;
     G("Forankring av stag ved heft — ingen endeforankring (NS-EN 1992-1-1 §8.4)");
     D("η_2", `${R.d_bolt} ${R.d_bolt <= 32 ? "≤" : ">"} 32 mm`, f2(B.eta2));
-    D("f_bd,stag", `2,25·${g.eta1}·${f2(B.eta2)}·${f3(R.fctd)}`, `${f2(B.fbd)} MPa`);
+    D("f_bd,stag", `${g.k_bd_bolt}·${g.eta1}·${f2(B.eta2)}·${f3(R.fctd)}` +
+      ` = ${(g.k_bd_bolt * g.a_ct / g.g_c).toFixed(3)}·f_ctk,0,05`, `${f2(B.fbd)} MPa`);
     D("σ_sd,stag", `${g.N_t}·10³/(${g.n_bolt}·${f0(R.As_bolt)})`, `${f0(B.sigma_sd)} MPa`);
     D("l_b,rqd,stag", `(${R.d_bolt}/4)(${f0(B.sigma_sd)}/${f2(B.fbd)})`, `${f0(B.lb_rqd)} mm`);
     D("c_d", g.anch_shape === "rett"
@@ -328,8 +332,30 @@ export const ASSUMPTIONS_HTML = `
      <code>l_b,rqd=(d/4)(σ_sd/f_bd)</code>, <code>f_bd=2,25·η₁·η₂·f_ctd</code> og
      <code>η₂=1,0</code> for <code>φ≤32</code> ellers <code>(132−φ)/100</code>. Kontrollen er
      <code>l_bd ≤ h_ef−c_nom</code>. Antall bøylelag langs <code>l_bd</code> (som inngår i α₃) løses
-     ved iterasjon. Merk at heftmodellen i EC2 er utviklet for <b>kamstål</b>; for glatt gjengestang
-     bør heftfastheten vurderes særskilt av ansvarlig prosjekterende.</li>
+     ved iterasjon.</li>
+ <li><b>Heftfasthet for gjengestang — grunnlag for k_bd = 1,90:</b> Strekkforankring av gjengestenger
+     er <b>ikke</b> anvist i NS-EN 1992-1-1; i prinsippet forankres de tilsvarende kamstål.
+     Betongelementboka bind B, kap. B19 pkt. 19.3.4 begrunner forskjellen slik: for kamstål brukes
+     <code>f_bd = 2,25·f_ctd</code> på den <i>nominelle</i> diameteren, mens den ytre kamdiameteren —
+     som faktisk bestemmer heften — er <code>Ø_heft = (1,10–1,20)·Ø_nom</code>. For gjengestang er
+     <code>Ø_heft = Ø_nom</code>, altså ingen slik reserve. Heftforsøk (Veritec-rapport 88-3259 med
+     videre henvisninger) indikerer at gjengestenger har heftfasthet <b>tilsvarende kamstål eller
+     bedre</b>; NS 3473 anga forholdet preget stang/kamstål = 1,2/1,4 = 0,86, Veritec-rapporten 0,93.
+     Betongelementboka anbefaler derfor <code>f_bd = 1,90·f_ctd</code> med <code>Ø = Ø_nom</code>,
+     dvs. forholdet <code>1,90/2,25 = 0,84</code>, betegnet som et konservativt nivå. Med
+     <code>γ_c=1,5</code> og <code>α_ct=0,85</code> gir dette <code>f_bd = 1,077·f_ctk,0,05</code>.
+     Koeffisienten er inndata (<code>k_bd,stag</code>) og kan settes til 2,25 dersom full
+     kamstålsverdi ønskes. Videre beregning av forankrings- og omfaringslengder gjøres som for
+     kamstål, dvs. med α₁–α₅ etter §8.4.4.</li>
+ <li><b>Merknad om endemutter kontra heft:</b> Betongelementboka pkt. 19.3.4/19.7.2.2 regner
+     forankringskapasiteten for gjengestang <i>med</i> endemutter som <b>kjeglebrudd uten heft</b>
+     langs stangen — ikke som partielt belastet areal (§6.7) slik denne modellen gjør — og krever at
+     nødvendig forankringslengde uansett ikke settes større enn vanlig heftforankring uten endemutter.
+     Ved små kantavstander (<code>a₁ ≈ 3,5·Ø_nom</code>) har endemutteren ifølge samme kilde ingen
+     hensikt. NS-EN 1992-4 §7.2.1.3 gir dessuten en egen uttrekkskontroll for hodeforankring,
+     <code>N_Rk,p = k₂·A_h·f_ck</code> med <code>k₂ = 7,5</code> (opprisset) / <code>10,5</code>
+     (uopprisset). Begge deler bør vurderes av ansvarlig prosjekterende før modellen brukes
+     utenfor forutsetningene her.</li>
  <li><b>Skjærnokk (shear lug):</b> betongtrykk foran nokk på <b>projisert areal</b> <code>A_lug=w·h_emb</code>,
      NS-EN 1992-1-1 §6.7 (evt. ACI 349 App. D / 35°-utbruddskjegle). Nokk reduserer hengarmen til
      <code>e_s*=t_grout+h_emb/2</code>. Kan slås av/på.</li>
