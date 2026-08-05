@@ -91,20 +91,31 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
   out.push(rect(pL, pilT, pR - pL, pilB - pilT, C.s1, C.ink, 1.6));
   out.push(tx(pL + 2, pilB + 14, "PILASTER", C.ink2, 10, "start"));
 
-  // eksentrisitet / utstikk
+  out.push(ln(24, sy(0), W - 24, sy(0), C.ink3, 0.8, "6 4"));
+  out.push(tx(W - 28, sy(0) - 5, "senterlinje ringmur", C.ink3, 9, "end"));
+
+  // e_p: senterlinje ringmur -> senterlinje pilaster
+  const pcy0 = (pilT + pilB) / 2, xe = pL - 34;
   if (Math.abs(x0) > 0.5) {
+    out.push(ln(xe - 10, sy(0), pL - 2, sy(0), C.crit, 0.8, "3 3"));
+    out.push(ln(xe - 10, pcy0, pL - 2, pcy0, C.crit, 0.8, "3 3"));
+    out.push(arrow(xe, sy(0), xe, pcy0, C.crit, 1.4));
+    out.push(tx(xe - 5, (sy(0) + pcy0) / 2 + 4, `e_p = ${x0.toFixed(0)}`, C.crit, 10, "end", "700"));
+  } else {
+    out.push(tx(pL - 12, pcy0 + 4, "e_p = 0 (sentrisk)", C.ink3, 9, "end"));
+  }
+
+  // utstikk forbi murflaten paa positiv side (kan vaere negativ = innenfor murlivet)
+  const proj = x0 + v.b / 2 - v.t_wall / 2;
+  if (proj > 0.5) {
     out.push(ln(pR + 40, wallB, pR + 40, pilB, C.crit, 1, "3 3"));
     out.push(arrow(pR + 40, wallB, pR + 40, pilB, C.crit, 1.4));
     out.push(tx(pR + 46, (wallB + pilB) / 2 + 4,
-      `utstikk ${(v.b - v.t_wall).toFixed(0)} mm`, C.crit, 10, "start", "700"));
-    out.push(tx(pR + 46, (wallB + pilB) / 2 + 17,
-      `e_pil = ${x0.toFixed(0)} mm`, C.crit, 9, "start"));
+      `utstikk ${proj.toFixed(0)} mm`, C.crit, 10, "start", "700"));
   } else {
-    // under senterlinje-teksten, som ligger paa samme hoyde naar pilasteren er sentrisk
-    out.push(tx(pR + 16, (pilT + pilB) / 2 + 28, "sentrisk (e_pil = 0)", C.ink3, 10, "start"));
+    out.push(tx(pR + 16, pilB + 6,
+      `ingen utstikk (${proj.toFixed(0)} mm)`, C.ink3, 9, "start"));
   }
-  out.push(ln(24, sy(0), W - 24, sy(0), C.ink3, 0.8, "6 4"));
-  out.push(tx(W - 28, sy(0) - 5, "senterlinje ringmur", C.ink3, 9, "end"));
 
   // bøyle
   const cov = Math.max(6, v.c_nom * sc);
@@ -234,16 +245,29 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
     mech === "axial" ? C.ink3 : C.shear, 10, "start", "700"));
   if (s1 !== null && s2 !== null) out.push(dim(barR + 2, s1, barR + 2, s2, "s_b"));
 
-  // stag + endeforankring
+  // stag + endeforankring (plate / sekskantmutter / ingen)
   for (const x of [boltL, boltR]) {
     out.push(ln(x, top - 2, x, nutY, C.ink, 2.4));
     if (R.isPlate) {
       const wpl = Math.max(10, v.a_anch * 0.42);
       out.push(rect(x - wpl / 2, nutY, wpl, Math.max(5, v.t_pl * 0.3), C.ink));
-    } else out.push(rect(x - 7, nutY, 14, 6, C.ink));
+    } else if (R.isNut) {
+      // mutter i oppriss: noekkelvidde 1,5d bred, 0,8d hoy, med fasede hjoerner
+      const wn = Math.max(9, R.a_nut * 0.42), hn = Math.max(5, 0.8 * R.d_bolt * 0.42), ch = hn * 0.22;
+      out.push(`<polygon points="${[
+        [x - wn / 2, nutY + ch], [x - wn / 2 + ch, nutY], [x + wn / 2 - ch, nutY],
+        [x + wn / 2, nutY + ch], [x + wn / 2, nutY + hn - ch], [x + wn / 2 - ch, nutY + hn],
+        [x - wn / 2 + ch, nutY + hn], [x - wn / 2, nutY + hn - ch],
+      ].map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ")}" fill="${C.ink}"/>`);
+    }
   }
   out.push(tx(boltL - 6, top + 30, v.boltsize, C.ink2, 10, "end"));
-  out.push(tx(cx, nutY + 14, R.isPlate ? "ankerplate" : "endemutter", C.ink2, 9));
+  out.push(tx(cx, nutY + 16,
+    R.isPlate ? "ankerplate" : R.isNut ? `endemutter (nv ${R.a_nut.toFixed(0)})`
+      : "ingen endeforankring — heft §8.4", C.ink2, 9));
+  if (R.noAnchor)
+    out.push(tx(cx, nutY + 28, `l_bd = ${R.bond.lbd.toFixed(0)} mm`,
+      R.u_bond <= 1 ? C.axial : C.crit, 9, "middle", "700"));
   for (const x of [barL, barR]) out.push(ln(x, foot - 4, x, top + 22, C.axial, 2.2));
   out.push(dim(boltL, top + 6, boltR, top + 6, "s_bolt", C.ink3, true));
 

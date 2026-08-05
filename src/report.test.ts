@@ -63,17 +63,18 @@ describe("buildReport()", () => {
     expect(checks.every((c) => c.kind === "check" && c.ok) === R.allOk).toBe(true);
   });
 
-  it("eksentrisiteten rapporteres for ensidig og sentrisk pilaster", () => {
-    const ecc = (v: Inputs) => {
-      const row = buildReport(v, compute(v)).flatMap((g) => g.rows)
-        .find((r) => r.kind === "calc" && r.sym === "e_pil");
-      return row && row.kind === "calc" ? row.res : "";
-    };
-    expect(ecc(DEFAULTS)).toBe("75 mm");                                   // (b 400-250)/2
-    expect(ecc({ ...DEFAULTS, pil_pos: "sentrisk" })).toBe("0 mm");
-    // eksentrisiteten foelger b (⊥V), ikke h (∥V)
-    expect(ecc({ ...DEFAULTS, b: 500 })).toBe("125 mm");
-    expect(ecc({ ...DEFAULTS, h: 900 })).toBe("75 mm");
+  const row = (v: Inputs, sym: string) => {
+    const r = buildReport(v, compute(v)).flatMap((g) => g.rows)
+      .find((x) => x.kind === "calc" && x.sym === sym);
+    return r && r.kind === "calc" ? r.res : "";
+  };
+
+  it("e_p settes fritt og utstikket foelger e_p, b og t_wall", () => {
+    expect(row(DEFAULTS, "e_p")).toBe("75 mm");
+    expect(row(DEFAULTS, "utstikk")).toBe("150 mm");             // 75 + 200 - 125
+    expect(row({ ...DEFAULTS, e_p: 0 }, "utstikk")).toBe("75 mm");
+    // pilasteren kan ligge helt innenfor murlivet -> negativt utstikk
+    expect(row({ ...DEFAULTS, e_p: 0, b: 200, t_wall: 400 }, "utstikk")).toBe("-100 mm");
   });
 
   it("skjaernokk-rader kommer kun naar nokken er aktiv", () => {
@@ -96,15 +97,17 @@ describe("2D-tegninger", () => {
       }
   });
 
-  it("planen viser utstikket for ensidig og 'sentrisk' ellers", () => {
-    expect(drawPlan(DEFAULTS, R, "shear")).toContain("e_pil = 75 mm");
-    const c = { ...DEFAULTS, pil_pos: "sentrisk" as const };
+  it("planen maaler e_p fra murens senterlinje, og 'sentrisk' ved e_p=0", () => {
+    expect(drawPlan(DEFAULTS, R, "shear")).toContain("e_p = 75");
+    const c = { ...DEFAULTS, e_p: 0 };
     expect(drawPlan(c, compute(c), "shear")).toContain("sentrisk");
   });
 
-  it("utstikket i planen foelger b (⊥V)", () => {
-    const w = { ...DEFAULTS, b: 550 };
-    expect(drawPlan(w, compute(w), "shear")).toContain("utstikk 300 mm");
+  it("utstikket i planen foelger e_p, b og t_wall", () => {
+    const w = { ...DEFAULTS, b: 550, e_p: 100 };
+    expect(drawPlan(w, compute(w), "shear")).toContain("utstikk 250 mm");
+    const inside = { ...DEFAULTS, e_p: 0, b: 200, t_wall: 400 };
+    expect(drawPlan(inside, compute(inside), "shear")).toContain("ingen utstikk");
   });
 
   it("planen merker V som parallell med ringmuren", () => {

@@ -23,19 +23,56 @@ describe("buildModel()", () => {
     expect(els.some((e) => e.material === "lug")).toBe(true);
     expect(els.length).toBe(27);
   });
-  it("mutter gir fastener i stedet for plate paa endeforankring", () => {
-    const els = buildModel({ ...DEFAULTS, anchor: "mutter" }, compute({ ...DEFAULTS, anchor: "mutter" }));
-    // bunnplate (1) er eneste plate; 4 muttere er fasteners sammen med 4 stag = 8
-    expect(els.filter((e) => e.ifcClass === "IfcPlate").length).toBe(1);
+  it("mutter tegnes som ekte sekskant med noekkelvidde 1,5*d - ikke som plate", () => {
+    const v = { ...DEFAULTS, anchor: "mutter" as const };
+    const R = compute(v);
+    const els = buildModel(v, R);
+    expect(els.filter((e) => e.ifcClass === "IfcPlate").length).toBe(1);   // kun bunnplaten
     expect(els.filter((e) => e.ifcClass === "IfcMechanicalFastener").length).toBe(8);
+    const nut = els.find((e) => e.id === "nut0")!;
+    expect(nut.geom.kind).toBe("prism");
+    if (nut.geom.kind === "prism") {
+      expect(nut.geom.profile.length).toBe(6);                             // sekskant
+      const xs = nut.geom.profile.map((p) => p[0]), ys = nut.geom.profile.map((p) => p[1]);
+      // profilen har hjoerner ved 30..330 grader: X-utstrekning = noekkelvidde
+      // (avstand mellom motstaaende FLATER), Y-utstrekning = hjoerne til hjoerne
+      const acrossFlats = Math.max(...xs) - Math.min(...xs);
+      const acrossCorners = Math.max(...ys) - Math.min(...ys);
+      expect(acrossFlats).toBeCloseTo(1.5 * R.d_bolt, 4);
+      expect(acrossCorners).toBeCloseTo(1.5 * R.d_bolt * 2 / Math.sqrt(3), 4);
+      expect(nut.geom.z1 - nut.geom.z0).toBeCloseTo(0.8 * R.d_bolt, 6);
+    }
   });
-  it("pilasteren er ENSIDIG: en flate flukter med ringmuren, resten stikker ut", () => {
+
+  it("anchor='ingen' gir ingen endeforankring i modellen", () => {
+    const v = { ...DEFAULTS, anchor: "ingen" as const };
+    const els = buildModel(v, compute(v));
+    expect(els.some((e) => e.id.startsWith("nut") || e.id.startsWith("aplate"))).toBe(false);
+    expect(els.filter((e) => e.ifcClass === "IfcMechanicalFastener").length).toBe(4); // kun stagene
+    expect(els.filter((e) => e.ifcClass === "IfcPlate").length).toBe(1);              // kun bunnplaten
+  });
+  it("e_p plasserer pilastersenteret fritt ift. murens senterlinje", () => {
     const els = buildModel(DEFAULTS, compute(DEFAULTS));
     const pil = bbox(els, "pilaster"), wall = bbox(els, "ringwall");
     expect(wall.c).toBe(0);                              // ringmuren definerer origo
-    expect(pil.lo).toBeCloseTo(wall.lo, 6);              // bakre flate flukter
-    expect(pil.c).toBeCloseTo((DEFAULTS.b - DEFAULTS.t_wall) / 2, 6);
-    expect(pil.hi - wall.hi).toBeCloseTo(DEFAULTS.b - DEFAULTS.t_wall, 6); // utstikk
+    expect(pil.c).toBeCloseTo(DEFAULTS.e_p, 6);
+    // med default (e_p=75, b=400, t_wall=250) flukter bakre flate tilfeldigvis
+    expect(pil.hi - wall.hi).toBeCloseTo(DEFAULTS.e_p + DEFAULTS.b / 2 - DEFAULTS.t_wall / 2, 6);
+  });
+
+  it("pilasteren trenger IKKE flukte med motstaaende murflate", () => {
+    // smalere enn muren og sentrert -> ligger helt inne i murlivet
+    const inside = { ...DEFAULTS, e_p: 0, b: 200, t_wall: 400 };
+    const p1 = bbox(buildModel(inside, compute(inside)), "pilaster");
+    const w1 = bbox(buildModel(inside, compute(inside)), "ringwall");
+    expect(p1.lo).toBeGreaterThan(w1.lo);
+    expect(p1.hi).toBeLessThan(w1.hi);
+    // liten e_p -> stikker ut paa den ene siden uten aa naa den andre murflaten
+    const part = { ...DEFAULTS, e_p: 40, b: 300, t_wall: 350 };
+    const p2 = bbox(buildModel(part, compute(part)), "pilaster");
+    const w2 = bbox(buildModel(part, compute(part)), "ringwall");
+    expect(p2.lo).toBeGreaterThan(w2.lo);                // naar ikke motstaaende flate
+    expect(p2.hi).toBeGreaterThan(w2.hi);                // men stikker ut paa forsiden
   });
 
   it("V gaar LANGS ringmuren: h (∥V) ligger i Y, b (⊥V) i X", () => {
@@ -52,8 +89,6 @@ describe("buildModel()", () => {
     if (wall.geom.kind !== "box") throw new Error("ringmur er ikke en kasse");
     expect(wall.geom.size[0]).toBe(v.t_wall);
     expect(wall.geom.size[1]).toBeGreaterThan(v.h);
-    // utstikket styres av b, ikke h
-    expect(pilasterOffsetX(v)).toBeCloseTo((v.b - v.t_wall) / 2, 6);
   });
 
   it("skjaernokken staar med bredden w_lug vinkelrett paa V", () => {
@@ -65,8 +100,8 @@ describe("buildModel()", () => {
     expect(sy).toBeLessThan(sx);    // tynn langs V (Y)
   });
 
-  it("sentrisk plassering gir null eksentrisitet", () => {
-    const v = { ...DEFAULTS, pil_pos: "sentrisk" as const };
+  it("e_p = 0 gir sentrisk pilaster", () => {
+    const v = { ...DEFAULTS, e_p: 0 };
     const pil = bbox(buildModel(v, compute(v)), "pilaster");
     expect(pilasterOffsetX(v)).toBe(0);
     expect(pil.c).toBe(0);

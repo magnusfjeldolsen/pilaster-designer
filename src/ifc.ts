@@ -85,6 +85,13 @@ export async function exportIFC(els: ElementSpec[], R: Results, v: Inputs): Prom
     const poly = add(new IFC4.IfcPolyline(path.map((p) => pt3(p))));
     return add(new IFC4.IfcSweptDiskSolid(poly, PLen(radius), null, null, null));
   };
+  // Vilkaarlig lukket profil (sekskantmutter) -> ekstrudert solid.
+  // IfcPolyline for en lukket profil maa gjenta foerste punkt til slutt.
+  const prismSolid = (profile: [number, number][], z0: number, z1: number) => {
+    const pts = [...profile, profile[0]].map(([x, y]) => pt2(x, y));
+    const prof = add(new IFC4.IfcArbitraryClosedProfileDef("AREA", null, add(new IFC4.IfcPolyline(pts))));
+    return add(new IFC4.IfcExtrudedAreaSolid(prof, axis3([0, 0, z0]), dirZ, PLen(Math.max(z1 - z0, 0.001))));
+  };
   const style = (solid: any, rgb: Vec3, opacity: number) => {
     const col = add(new IFC4.IfcColourRgb(null, NRatio(rgb[0]), NRatio(rgb[1]), NRatio(rgb[2])));
     const shading = add(new IFC4.IfcSurfaceStyleShading(col, NRatio(1 - opacity)));
@@ -95,9 +102,11 @@ export async function exportIFC(els: ElementSpec[], R: Results, v: Inputs): Prom
   // ---- produkter ----
   const productHandles: any[] = [];
   const makeProduct = (e: ElementSpec) => {
-    const solid = e.geom.kind === "box" ? boxSolid(e.geom.size, e.geom.center) : sweepSolid(e.geom.radius, e.geom.path);
+    const solid = e.geom.kind === "box" ? boxSolid(e.geom.size, e.geom.center)
+      : e.geom.kind === "prism" ? prismSolid(e.geom.profile, e.geom.z0, e.geom.z1)
+      : sweepSolid(e.geom.radius, e.geom.path);
     style(solid, e.rgb, e.opacity);
-    const repType = e.geom.kind === "box" ? "SweptSolid" : "AdvancedSweptSolid";
+    const repType = e.geom.kind === "sweep" ? "AdvancedSweptSolid" : "SweptSolid";
     const shape = add(new IFC4.IfcShapeRepresentation(body, Lbl("Body"), Lbl(repType), [solid]));
     const pds = add(new IFC4.IfcProductDefinitionShape(null, null, [shape]));
     const pl = add(new IFC4.IfcLocalPlacement(worldPl, add(new IFC4.IfcAxis2Placement3D(pt3([0, 0, 0]), dirZ, dirX))));

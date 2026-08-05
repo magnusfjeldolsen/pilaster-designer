@@ -69,3 +69,83 @@ describe("compute() – 8O25 aksial og lug/plate", () => {
     expect(compute(good).u_emb).toBeLessThanOrEqual(1);
   });
 });
+
+describe("compute() – endeforankring: ingen / mutter / plate", () => {
+  it("mutter bruker noekkelvidde 1,5*d og sekskantareal, ikke a_anch", () => {
+    const R = compute({ ...DEFAULTS, anchor: "mutter" });
+    expect(R.isNut).toBe(true);
+    expect(R.a_nut).toBeCloseTo(1.5 * R.d_bolt, 6);              // M30 -> 45 mm
+    // lastflate = (sqrt3/2)*s^2, uttrykt som ekvivalent kvadratside
+    expect(R.Ac0).toBeCloseTo(Math.sqrt(3) / 2 * R.a_nut ** 2, 4);
+    expect(R.a_eff).toBeCloseTo(Math.sqrt(R.Ac0), 6);
+    // a_anch (120) skal ikke lenger paavirke mutter-tilfellet
+    expect(compute({ ...DEFAULTS, anchor: "mutter", a_anch: 300 }).a_eff).toBeCloseTo(R.a_eff, 6);
+  });
+
+  it("plate bruker a_anch som foer", () => {
+    const R = compute(DEFAULTS);
+    expect(R.isPlate).toBe(true);
+    expect(R.a_eff).toBeCloseTo(DEFAULTS.a_anch, 6);
+    expect(R.T_nut).toBeCloseTo(66.7, 0);                        // uendret fra foer
+  });
+
+  it("mindre lastflate (mutter) gir stoerre spaltestrekk enn plate", () => {
+    expect(compute({ ...DEFAULTS, anchor: "mutter" }).T_nut)
+      .toBeGreaterThan(compute(DEFAULTS).T_nut);
+  });
+
+  it("'ingen' fjerner endelast: ingen endetrykk og ingen spaltestrekk derfra", () => {
+    const R = compute({ ...DEFAULTS, anchor: "ingen" });
+    expect(R.noAnchor).toBe(true);
+    expect(R.T_nut).toBe(0);
+    expect(R.F_Rdu).toBe(0);
+    expect(R.u_bear).toBe(0);
+    expect(R.u_bond).toBeGreaterThan(0);                         // heft styrer i stedet
+  });
+});
+
+describe("compute() – heftforankring av stag (EC2 §8.4)", () => {
+  const v: Inputs = { ...DEFAULTS, anchor: "ingen" };
+  const R = compute(v), B = R.bond;
+
+  it("eta_2 = 1,0 for phi <= 32 og (132-phi)/100 over", () => {
+    expect(B.eta2).toBe(1);                                      // M30
+    expect(compute({ ...v, boltsize: "M36" }).bond.eta2).toBeCloseTo(0.96, 6);
+    expect(compute({ ...v, phi_v: 40 }).eta2_v).toBeCloseTo(0.92, 6);
+  });
+
+  it("l_b,rqd = (d/4)*(sigma_sd/f_bd)", () => {
+    expect(B.sigma_sd).toBeCloseTo(v.N_t / v.n_bolt * 1000 / R.As_bolt, 4);
+    expect(B.lb_rqd).toBeCloseTo(R.d_bolt / 4 * (B.sigma_sd / B.fbd), 4);
+  });
+
+  it("alfa-faktorene ligger i [0,7; 1,0] og l_bd >= l_b,min", () => {
+    for (const a of [B.a2, B.a3, B.a5]) {
+      expect(a).toBeGreaterThanOrEqual(0.7);
+      expect(a).toBeLessThanOrEqual(1.0);
+    }
+    expect(B.a1).toBe(1);                                        // rett stang
+    expect(B.lb_min).toBeCloseTo(Math.max(0.3 * B.lb_rqd, 10 * R.d_bolt, 100), 4);
+    expect(B.lbd).toBeGreaterThanOrEqual(B.lb_min - 1e-6);
+    expect(B.lbd).toBeCloseTo(
+      Math.max(B.a1 * B.a2 * B.a3 * B.a4 * B.a5 * B.lb_rqd, B.lb_min), 1);
+  });
+
+  it("krok gir alfa_1 = 0,7 og dermed kortere l_bd enn rett stang", () => {
+    const hook = compute({ ...v, anch_shape: "krok" }).bond;
+    expect(hook.a1).toBe(0.7);
+    expect(hook.lbd).toBeLessThanOrEqual(B.lbd);
+  });
+
+  it("tverrtrykk og sveiset tverrarmering reduserer l_bd", () => {
+    expect(compute({ ...v, p_tr: 5 }).bond.a5).toBeCloseTo(0.8, 6);
+    expect(compute({ ...v, alpha4: 0.7 }).bond.lbd).toBeLessThan(B.lbd);
+  });
+
+  it("kontrollen er l_bd <= h_ef - c_nom", () => {
+    expect(R.l_avail).toBeCloseTo(v.h_ef - v.c_nom, 6);
+    expect(R.u_bond).toBeCloseTo(B.lbd / R.l_avail, 6);
+    const deep = compute({ ...v, h_ef: 3000 });
+    expect(deep.u_bond).toBeLessThan(1);
+  });
+});

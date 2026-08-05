@@ -61,6 +61,14 @@ export class Viewer {
         geo = new THREE.BoxGeometry(...e.geom.size);
         const [cx, cy, cz] = e.geom.center;
         geo.translate(cx, cy, cz);
+      } else if (e.geom.kind === "prism") {
+        const shape = new THREE.Shape();
+        e.geom.profile.forEach(([x, y], i) => i ? shape.lineTo(x, y) : shape.moveTo(x, y));
+        shape.closePath();
+        geo = new THREE.ExtrudeGeometry(shape, {
+          depth: e.geom.z1 - e.geom.z0, bevelEnabled: false,
+        });
+        geo.translate(0, 0, e.geom.z0);
       } else {
         const pts = e.geom.path.map((p: Vec3) => new THREE.Vector3(...p));
         const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.02);

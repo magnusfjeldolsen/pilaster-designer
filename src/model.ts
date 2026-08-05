@@ -12,7 +12,9 @@ export type Vec3 = [number, number, number];
 
 export type Geom =
   | { kind: "box"; size: Vec3; center: Vec3 }            // aksejustert kasse
-  | { kind: "sweep"; radius: number; path: Vec3[] };      // sirkulaer disk sveipet langs polylinje
+  | { kind: "sweep"; radius: number; path: Vec3[] }      // sirkulaer disk sveipet langs polylinje
+  // lukket XY-profil (absolutte koordinater) ekstrudert fra z0 til z1 - brukes til sekskantmutter
+  | { kind: "prism"; profile: [number, number][]; z0: number; z1: number };
 
 export interface ElementSpec {
   id: string;
@@ -60,12 +62,21 @@ function roundedRect(hx: number, hy: number, z: number, rb: number, k = 6): Vec3
 }
 
 /** Senterforskyvning av pilasteren langs X = paa tvers av ringmuren.
- *  "ensidig": bakre flate flukter med ringmurens bakside (x = -t_wall/2), slik at
- *  fortykkelsen b - t_wall stikker ut paa forsiden. "sentrisk": symmetrisk om muren.
- *  Maalet paa tvers av muren er b (⊥ V), siden V gaar langs muren.
- *  Delt med 2D-snittet slik at plan og 3D viser samme geometri. */
-export function pilasterOffsetX(v: Pick<Inputs, "b" | "t_wall" | "pil_pos">): number {
-  return v.pil_pos === "sentrisk" ? 0 : (v.b - v.t_wall) / 2;
+ *  Fritt valgt: e_p er avstanden fra ringmurens senterlinje til pilasterens senterlinje.
+ *  e_p = 0 gir sentrisk pilaster. Pilasteren trenger IKKE flukte med noen murflate;
+ *  med e_p < (b - t_wall)/2 stikker den ut paa begge sider, med e_p > b/2 - t_wall/2
+ *  staar den helt utenfor muren. Delt med 2D-snittet. */
+export function pilasterOffsetX(v: Pick<Inputs, "e_p">): number {
+  return v.e_p;
+}
+
+/** Sekskantprofil (noekkelvidde s = avstand mellom motstaaende flater). */
+function hexProfile(cx: number, cy: number, acrossFlats: number): [number, number][] {
+  const r = acrossFlats / Math.sqrt(3);            // omskrevet radius (hjoerne)
+  return Array.from({ length: 6 }, (_, i) => {
+    const t = (i * 60 + 30) * Math.PI / 180;
+    return [cx + r * Math.cos(t), cy + r * Math.sin(t)] as [number, number];
+  });
 }
 
 export function buildModel(v: Inputs, R: Results): ElementSpec[] {
@@ -97,7 +108,9 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   const shift = (g: Geom): Geom =>
     g.kind === "box"
       ? { ...g, center: [g.center[0] + x0, g.center[1], g.center[2]] }
-      : { ...g, path: g.path.map(([x, y, z]) => [x + x0, y, z] as Vec3) };
+      : g.kind === "sweep"
+      ? { ...g, path: g.path.map(([x, y, z]) => [x + x0, y, z] as Vec3) }
+      : { ...g, profile: g.profile.map(([x, y]) => [x + x0, y] as [number, number]) };
   const pushP: typeof push = (id, name, ifcClass, key, geom) =>
     push(id, name, ifcClass, key, shift(geom));
 
@@ -126,13 +139,18 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
       { kind: "sweep", radius: R.d_bolt / 2, path: [[x, y, rodTop], [x, y, rodBot]] }));
 
   // ---- Endeforankring (plate eller mutter) per stag ----
+  // "ingen": staget stopper uten endeforankring (forankres ved heft, §8.4).
+  // "mutter": sekskantmutter, noekkelvidde 1,5*d og hoyde ~0,8*d (ISO 4032).
+  // "plate":  kvadratisk ankerplate a_anch x a_anch x t_pl.
   boltXY.forEach(([x, y], i) => {
     if (R.isPlate)
       pushP(`aplate${i}`, `Ankerplate #${i + 1}`, "IfcPlate", "steel",
         { kind: "box", size: [v.a_anch, v.a_anch, v.t_pl], center: [x, y, rodBot + v.t_pl / 2] });
-    else
-      pushP(`nut${i}`, `Endemutter #${i + 1}`, "IfcMechanicalFastener", "steel",
-        { kind: "box", size: [v.a_anch, v.a_anch, 18], center: [x, y, rodBot + 9] });
+    else if (R.isNut) {
+      const mHeight = 0.8 * R.d_bolt;
+      pushP(`nut${i}`, `Endemutter M${R.d_bolt} #${i + 1}`, "IfcMechanicalFastener", "steel",
+        { kind: "prism", profile: hexProfile(x, y, R.a_nut), z0: rodBot, z1: rodBot + mHeight });
+    }
   });
 
   // ---- Oppstikkende jern 8xO25 (hjorner + midt) ----
