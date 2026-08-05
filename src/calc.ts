@@ -6,6 +6,8 @@ export interface Inputs {
   H_pil: number; H_wall: number; b: number; h: number; t_wall: number;
   a1p: number; s_bolt: number; e_h: number; h_ef: number; e_s: number;
   theta: number; c_nom: number;
+  // pilasterens plassering i ringmuren (paavirker kun geometri, ikke kapasitet)
+  pil_pos: "ensidig" | "sentrisk";
   // bolter
   n_bolt: number; boltsize: string; grade: string;
   anchor: "mutter" | "plate"; a_anch: number; t_pl: number; fy_pl: number;
@@ -30,6 +32,7 @@ export const GRADES = ["4.6", "5.6", "5.8", "6.8", "8.8", "10.9", "12.9"];
 export const DEFAULTS: Inputs = {
   H_pil: 900, H_wall: 900, b: 400, h: 400, t_wall: 250,
   a1p: 300, s_bolt: 200, e_h: 120, h_ef: 500, e_s: 150, theta: 45, c_nom: 50,
+  pil_pos: "ensidig",
   n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
   phi_b: 12, n_ben: 2, s_b: 100, phi_v: 25, n_v: 8,
   use_lug: false, w_lug: 150, h_emb: 80, t_grout: 30, k_lug: 2.0,

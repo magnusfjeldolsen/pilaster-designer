@@ -6,6 +6,7 @@
   <title>Pilaster 3D + IFC — innfesting stålsøyle (NS-EN 1992-4)</title>
   <style>
     :root { --bg:#f4f4f1; --panel:#fcfcfb; --line:#d9d9d2; --ink:#0b0b0b; --ink2:#52514e; --acc:#2a78d6;
+      --ink3:#8a897f; --surf2:#eeeeea;
       --good:#0ca30c; --bad:#d03b3b; --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
       --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; }
     *{box-sizing:border-box} html,body{margin:0;height:100%}
@@ -17,19 +18,78 @@
     .row label{font-size:12.5px;color:var(--ink2)}
     .row input[type=number],.row select{font-family:var(--mono);font-size:12.5px;padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);width:100%}
     .row.check{grid-template-columns:1fr auto}
-    #stage{flex:1;position:relative} canvas{width:100%;height:100%;display:block}
+    .row .u{font-size:10.5px;color:var(--ink3)}
+
+    /* ---- hovedomrade med faner ---- */
+    #main{flex:1;display:flex;flex-direction:column;min-width:0}
+    #tabbar{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+    #tabbar button{font-family:var(--sans);font-size:13px;font-weight:600;border:1px solid var(--line);border-bottom:none;
+      background:var(--surf2);color:var(--ink2);padding:7px 16px;border-radius:8px 8px 0 0;cursor:pointer;margin-bottom:-1px}
+    #tabbar button[aria-selected=true]{background:var(--bg);color:var(--ink);border-bottom:1px solid var(--bg)}
+    .view{flex:1;min-height:0;position:relative;display:none}
+    .view.on{display:block}
+
+    /* ---- 3D ---- */
+    #stage{position:absolute;inset:0} canvas{width:100%;height:100%;display:block}
     #bar{position:absolute;top:12px;left:12px;display:flex;gap:8px;flex-wrap:wrap}
-    #bar button{font-family:var(--sans);font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-    #bar button.primary{background:var(--acc);color:#fff;border-color:transparent}
+    #bar button,.pbtn{font-family:var(--sans);font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    #bar button.primary,.pbtn.primary{background:var(--acc);color:#fff;border-color:transparent}
     #legend{position:absolute;bottom:12px;left:12px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px}
     #legend .li{display:flex;align-items:center;gap:6px;margin:2px 0}
     #legend .sw{width:12px;height:12px;border-radius:3px}
     #toggles{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px}
     #toggles label{display:flex;gap:6px;align-items:center;margin:2px 0;cursor:pointer}
+    #status{position:absolute;bottom:12px;right:12px;font-size:11.5px;color:var(--ink2);background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+
+    /* ---- 2D ---- */
+    #view2d{overflow-y:auto;padding:14px 18px}
+    #mechbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+    #mechbar button{font-family:var(--sans);font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink2);padding:6px 12px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:6px}
+    #mechbar button[aria-pressed=true]{border-color:currentColor;background:var(--panel);color:var(--ink)}
+    #mechbar .dot{width:9px;height:9px;border-radius:50%}
+    #mechtext{font-size:12.5px;color:var(--ink2);line-height:1.55;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:6px;padding:9px 12px;margin-bottom:12px}
+    #mechtext i{font-family:var(--mono);font-style:normal;background:var(--surf2);padding:0 3px;border-radius:3px}
+    .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+    .fig{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
+
+    /* ---- rapport ---- */
+    #viewdoc{overflow-y:auto;padding:0}
+    .doc{max-width:1000px;margin:0 auto;padding:18px 24px 60px;background:var(--panel);min-height:100%}
+    .doc h1{font-size:18px;margin:0 0 4px} .doc h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--acc);margin:22px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+    .doc h3{font-size:13px;margin:16px 0 6px}
+    .docmeta{font-size:11.5px;color:var(--ink2);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+    .docactions{display:flex;gap:8px;margin:10px 0 4px}
+    table.t{width:100%;border-collapse:collapse;font-size:11.5px}
+    table.t td,table.t th{border-bottom:1px solid var(--line);padding:3px 6px;vertical-align:top;text-align:left}
+    table.t th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink3);font-weight:700}
+    table.t tr.grp td{background:var(--surf2);font-weight:700;font-size:11px;color:var(--ink);padding:5px 6px}
+    .dsym{font-family:var(--mono);white-space:nowrap;font-weight:600}
+    .dfml,.dsub{font-family:var(--mono);color:var(--ink2);font-size:11px}
+    .dres{font-family:var(--mono);text-align:right;white-space:nowrap;font-weight:600}
+    .dref{color:var(--ink3);font-size:10.5px;white-space:nowrap}
+    .badge{font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+    .badge.ok{background:#e6f6e6;color:#0a7c0a} .badge.no{background:#fbe7e7;color:#b32d2d}
+    .ok{color:var(--good)} .bad{color:var(--bad)}
+    .doc code{font-family:var(--mono);font-size:11px;background:var(--surf2);padding:0 3px;border-radius:3px}
+    .doc ul{font-size:11.5px;line-height:1.6;color:var(--ink2);padding-left:18px}
     .res{font-family:var(--mono);font-size:12px;border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
     .res .r{display:flex;justify-content:space-between;margin:2px 0} .res .r b{font-weight:700}
-    .ok{color:var(--good)} .bad{color:var(--bad)}
-    #status{position:absolute;bottom:12px;right:12px;font-size:11.5px;color:var(--ink2);background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+
+    /* ---- utskrift / PDF ---- */
+    @page { size: A4 portrait; margin: 14mm 12mm; }
+    @media print {
+      html,body{height:auto;overflow:visible;display:block;background:#fff}
+      #panel,#tabbar,#view3d,#view2d,.docactions,#status{display:none !important}
+      #main{display:block;height:auto} .view{display:none !important;position:static;height:auto}
+      #viewdoc{display:block !important;overflow:visible;height:auto}
+      .doc{max-width:none;margin:0;padding:0;background:#fff}
+      .doc h2{break-after:avoid;page-break-after:avoid}
+      table.t{break-inside:auto} table.t tr{break-inside:avoid;page-break-inside:avoid}
+      table.t tr.grp{break-after:avoid;page-break-after:avoid}
+      .figs{break-inside:avoid;page-break-inside:avoid;grid-template-columns:1fr 1fr}
+      .fig{border:1px solid #ccc}
+      .badge.ok{background:none;color:#0a7c0a} .badge.no{background:none;color:#b32d2d}
+    }
   </style>
 </head>
 <body>
@@ -39,17 +99,39 @@
     <div id="inputs"></div>
     <div class="res" id="results"></div>
   </div>
-  <div id="stage">
-    <canvas id="c"></canvas>
-    <div id="bar">
-      <button class="primary" id="btnIfc">Eksporter IFC</button>
-      <button id="btnGlb">Eksporter GLB</button>
-      <button id="btnFit">Sentrer</button>
+
+  <div id="main">
+    <div id="tabbar" role="tablist">
+      <button role="tab" data-tab="3d" aria-selected="true">3D</button>
+      <button role="tab" data-tab="2d" aria-selected="false">2D snitt</button>
+      <button role="tab" data-tab="doc" aria-selected="false">Beregningsrapport</button>
     </div>
-    <div id="toggles"></div>
-    <div id="legend"></div>
-    <div id="status">klar</div>
+
+    <div class="view on" id="view3d">
+      <div id="stage">
+        <canvas id="c"></canvas>
+        <div id="bar">
+          <button class="primary" id="btnIfc">Eksporter IFC</button>
+          <button id="btnGlb">Eksporter GLB</button>
+          <button id="btnFit">Sentrer</button>
+        </div>
+        <div id="toggles"></div>
+        <div id="legend"></div>
+        <div id="status">klar</div>
+      </div>
+    </div>
+
+    <div class="view" id="view2d">
+      <div id="mechbar"></div>
+      <div id="mechtext"></div>
+      <div class="figs" id="figs2d"></div>
+    </div>
+
+    <div class="view" id="viewdoc">
+      <div class="doc" id="doc"></div>
+    </div>
   </div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

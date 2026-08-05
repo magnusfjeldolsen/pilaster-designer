@@ -56,6 +56,14 @@ function roundedRect(hx: number, hy: number, z: number, rb: number, k = 6): Vec3
   return pts;
 }
 
+/** Senterforskyvning av pilasteren langs X (skjaerretningen).
+ *  "ensidig": bakre flate flukter med ringmurens bakside (x = -t_wall/2), slik at
+ *  fortykkelsen h - t_wall stikker ut paa forsiden. "sentrisk": symmetrisk om muren.
+ *  Delt med 2D-snittet slik at plan og 3D viser samme geometri. */
+export function pilasterOffsetX(v: Pick<Inputs, "h" | "t_wall" | "pil_pos">): number {
+  return v.pil_pos === "sentrisk" ? 0 : (v.h - v.t_wall) / 2;
+}
+
 export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   const els: ElementSpec[] = [];
   const hx = v.h / 2, hy = v.b / 2;           // pilaster half dims (X=h, Y=b)
@@ -78,34 +86,48 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
     els.push({ id, name, ifcClass, material: mat, color: c.hex, rgb: c.rgb, opacity: c.op, geom });
   };
 
+  // Pilasteren er normalt en ENSIDIG fortykkelse av ringmuren: den ene flaten
+  // flukter med ringmurveggen, resten (h - t_wall) stikker ut. Ringmuren staar i
+  // x=0; hele pilasterlokket (betong, stal, stag, armering) forskyves x0.
+  const x0 = pilasterOffsetX(v);
+  const shift = (g: Geom): Geom =>
+    g.kind === "box"
+      ? { ...g, center: [g.center[0] + x0, g.center[1], g.center[2]] }
+      : { ...g, path: g.path.map(([x, y, z]) => [x + x0, y, z] as Vec3) };
+  const pushP: typeof push = (id, name, ifcClass, key, geom) =>
+    push(id, name, ifcClass, key, shift(geom));
+
   // ---- Betong ----
+  // Sale sentreres under samlet utstrekning av ringmur + pilaster, med 300 mm utstikk.
+  const xMin = Math.min(-v.t_wall / 2, x0 - hx), xMax = Math.max(v.t_wall / 2, x0 + hx);
   push("footing", "Sale", "IfcFooting", "footing",
-    { kind: "box", size: [v.h + 600, Lw, tFoot], center: [0, 0, -v.H_pil - tFoot / 2] });
+    { kind: "box", size: [xMax - xMin + 600, Lw, tFoot],
+      center: [(xMin + xMax) / 2, 0, -v.H_pil - tFoot / 2] });
   push("ringwall", "Ringmur", "IfcWall", "wall",
     { kind: "box", size: [v.t_wall, Lw, v.H_wall], center: [0, 0, -v.H_wall / 2] });
-  push("pilaster", "Pilaster", "IfcColumn", "concrete",
+  pushP("pilaster", "Pilaster", "IfcColumn", "concrete",
     { kind: "box", size: [v.h, v.b, v.H_pil], center: [0, 0, -v.H_pil / 2] });
 
   // ---- Stal: bunnplate + soylestubbe ----
-  push("baseplate", "Bunnplate stalsoyle", "IfcPlate", "steel",
+  pushP("baseplate", "Bunnplate stalsoyle", "IfcPlate", "steel",
     { kind: "box", size: [v.a1p, v.a1p, tbp], center: [0, 0, tbp / 2] });
-  push("colstub", "Stalsoyle (stubbe)", "IfcMember", "steel",
+  pushP("colstub", "Stalsoyle (stubbe)", "IfcMember", "steel",
     { kind: "box", size: [v.h * 0.45, v.b * 0.45, 300], center: [0, 0, tbp + 150] });
 
   // ---- Gjengestag (4x) ----
   const rodTop = tbp + 40, rodBot = -v.h_ef;
   const boltXY: Vec3[] = [[sx, sy, 0], [-sx, sy, 0], [sx, -sy, 0], [-sx, -sy, 0]];
   boltXY.forEach(([x, y], i) =>
-    push(`rod${i}`, `Gjengestag ${v.boltsize} #${i + 1}`, "IfcMechanicalFastener", "bolt",
+    pushP(`rod${i}`, `Gjengestag ${v.boltsize} #${i + 1}`, "IfcMechanicalFastener", "bolt",
       { kind: "sweep", radius: R.d_bolt / 2, path: [[x, y, rodTop], [x, y, rodBot]] }));
 
   // ---- Endeforankring (plate eller mutter) per stag ----
   boltXY.forEach(([x, y], i) => {
     if (R.isPlate)
-      push(`aplate${i}`, `Ankerplate #${i + 1}`, "IfcPlate", "steel",
+      pushP(`aplate${i}`, `Ankerplate #${i + 1}`, "IfcPlate", "steel",
         { kind: "box", size: [v.a_anch, v.a_anch, v.t_pl], center: [x, y, rodBot + v.t_pl / 2] });
     else
-      push(`nut${i}`, `Endemutter #${i + 1}`, "IfcMechanicalFastener", "steel",
+      pushP(`nut${i}`, `Endemutter #${i + 1}`, "IfcMechanicalFastener", "steel",
         { kind: "box", size: [v.a_anch, v.a_anch, 18], center: [x, y, rodBot + 9] });
   });
 
@@ -117,7 +139,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   ] as Vec3[]).slice(0, v.n_v);
   const barTop = -(v.c_nom + v.phi_b + v.phi_v / 2), barBot = -v.H_pil - 150;
   barXY.forEach(([x, y], i) =>
-    push(`bar${i}`, `Oppstikk O${v.phi_v} #${i + 1}`, "IfcReinforcingBar", "bar",
+    pushP(`bar${i}`, `Oppstikk O${v.phi_v} #${i + 1}`, "IfcReinforcingBar", "bar",
       { kind: "sweep", radius: v.phi_v / 2, path: [[x, y, barTop], [x, y, barBot]] }));
 
   // ---- Boyler (n_lag lukkede rektangler i effektiv sone) ----
@@ -126,13 +148,13 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
     const z = -(v.c_nom + v.phi_b / 2) - k * v.s_b;
     if (z < -v.H_pil + 10) break;
     const rb = Math.max(2 * v.phi_b, 15);   // bøyeradius (mandrel)
-    push(`stirrup${k}`, `Boyle O${v.phi_b} #${k + 1}`, "IfcReinforcingBar", "stirrup",
+    pushP(`stirrup${k}`, `Boyle O${v.phi_b} #${k + 1}`, "IfcReinforcingBar", "stirrup",
       { kind: "sweep", radius: v.phi_b / 2, path: roundedRect(rxx, ryy, z, rb) });
   }
 
   // ---- Skjaernokk ----
   if (v.use_lug)
-    push("lug", "Skjaernokk", "IfcPlate", "lug",
+    pushP("lug", "Skjaernokk", "IfcPlate", "lug",
       { kind: "box", size: [20, v.w_lug, v.h_emb + v.t_grout], center: [0, 0, -(v.h_emb + v.t_grout) / 2] });
 
   return els;
