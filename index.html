@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pilaster 3D + IFC — innfesting stålsøyle (NS-EN 1992-4)</title>
+  <style>
+    :root { --bg:#f4f4f1; --panel:#fcfcfb; --line:#d9d9d2; --ink:#0b0b0b; --ink2:#52514e; --acc:#2a78d6;
+      --good:#0ca30c; --bad:#d03b3b; --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; }
+    *{box-sizing:border-box} html,body{margin:0;height:100%}
+    body{font-family:var(--sans);color:var(--ink);background:var(--bg);display:flex;height:100vh;overflow:hidden}
+    #panel{width:340px;min-width:340px;height:100%;overflow-y:auto;background:var(--panel);border-right:1px solid var(--line);padding:14px 16px}
+    #panel h1{font-size:15px;margin:0 0 2px} #panel .sub{font-size:11.5px;color:var(--ink2);margin-bottom:12px}
+    .sec{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--acc);margin:14px 0 6px}
+    .row{display:grid;grid-template-columns:1fr 92px;gap:6px;align-items:center;margin:3px 0}
+    .row label{font-size:12.5px;color:var(--ink2)}
+    .row input[type=number],.row select{font-family:var(--mono);font-size:12.5px;padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);width:100%}
+    .row.check{grid-template-columns:1fr auto}
+    #stage{flex:1;position:relative} canvas{width:100%;height:100%;display:block}
+    #bar{position:absolute;top:12px;left:12px;display:flex;gap:8px;flex-wrap:wrap}
+    #bar button{font-family:var(--sans);font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+    #bar button.primary{background:var(--acc);color:#fff;border-color:transparent}
+    #legend{position:absolute;bottom:12px;left:12px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px}
+    #legend .li{display:flex;align-items:center;gap:6px;margin:2px 0}
+    #legend .sw{width:12px;height:12px;border-radius:3px}
+    #toggles{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px}
+    #toggles label{display:flex;gap:6px;align-items:center;margin:2px 0;cursor:pointer}
+    .res{font-family:var(--mono);font-size:12px;border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+    .res .r{display:flex;justify-content:space-between;margin:2px 0} .res .r b{font-weight:700}
+    .ok{color:var(--good)} .bad{color:var(--bad)}
+    #status{position:absolute;bottom:12px;right:12px;font-size:11.5px;color:var(--ink2);background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h1>Pilaster 3D + IFC</h1>
+    <div class="sub">Innfesting stålsøyle · NS-EN 1992-4 · web-ifc + three.js</div>
+    <div id="inputs"></div>
+    <div class="res" id="results"></div>
+  </div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="bar">
+      <button class="primary" id="btnIfc">Eksporter IFC</button>
+      <button id="btnGlb">Eksporter GLB</button>
+      <button id="btnFit">Sentrer</button>
+    </div>
+    <div id="toggles"></div>
+    <div id="legend"></div>
+    <div id="status">klar</div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
