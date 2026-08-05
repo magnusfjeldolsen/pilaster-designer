@@ -346,16 +346,26 @@ export const ASSUMPTIONS_HTML = `
      <code>γ_c=1,5</code> og <code>α_ct=0,85</code> gir dette <code>f_bd = 1,077·f_ctk,0,05</code>.
      Koeffisienten er inndata (<code>k_bd,stag</code>) og kan settes til 2,25 dersom full
      kamstålsverdi ønskes. Videre beregning av forankrings- og omfaringslengder gjøres som for
-     kamstål, dvs. med α₁–α₅ etter §8.4.4.</li>
- <li><b>Merknad om endemutter kontra heft:</b> Betongelementboka pkt. 19.3.4/19.7.2.2 regner
-     forankringskapasiteten for gjengestang <i>med</i> endemutter som <b>kjeglebrudd uten heft</b>
-     langs stangen — ikke som partielt belastet areal (§6.7) slik denne modellen gjør — og krever at
-     nødvendig forankringslengde uansett ikke settes større enn vanlig heftforankring uten endemutter.
-     Ved små kantavstander (<code>a₁ ≈ 3,5·Ø_nom</code>) har endemutteren ifølge samme kilde ingen
-     hensikt. NS-EN 1992-4 §7.2.1.3 gir dessuten en egen uttrekkskontroll for hodeforankring,
-     <code>N_Rk,p = k₂·A_h·f_ck</code> med <code>k₂ = 7,5</code> (opprisset) / <code>10,5</code>
-     (uopprisset). Begge deler bør vurderes av ansvarlig prosjekterende før modellen brukes
-     utenfor forutsetningene her.</li>
+     kamstål, dvs. med α₁–α₅ etter §8.4.4.
+     <i>Merk kildens alder:</i> forholdstallene bak 1,90 stammer fra NS 3473 og heftforsøk fra
+     1980-tallet, med datidens norske kamstål som referanse. Kamgeometrien i dagens B500NC etter
+     NS-EN 10080 er ikke nødvendigvis den samme, så 1,90 bør leses som et konservativt valg og ikke
+     som en presis kalibrering. Materialfaktorene følger uansett Eurokode med NA
+     (<code>γ_c=1,5</code>, <code>γ_s=1,15</code>) — ikke NS 3473 sine
+     (<code>γ_c=1,4</code>, <code>γ_s=1,25</code>).</li>
+ <li><b>Hvorfor betongkjeglebrudd ikke kontrolleres her:</b> De horisontale bøylene er
+     <b>tilleggsarmering</b> i NS-EN 1992-4 sin forstand — de krysser den forutsatte bruddkjeglen og
+     er forankret utenfor den. Etter §7.2.1 skal <code>N_Rd,c</code> (betongkjeglebrudd) da
+     <b>ikke</b> inngå i kapasitetskontrollen; strekket føres i stedet over i tilleggsarmeringen, og
+     det som må ettervises er <b>stålbrudd i bøylene</b> (<code>N_Rd,re</code>, §7.2.1.9) og
+     <b>forankring av bøylene</b> utenfor kjeglen (<code>N_Rd,a</code>, med forankringslengde etter
+     NS-EN 1992-1-1 §8.4). Begge er med i kontrolltabellen over. Dette er grunnen til at
+     kjeglebruddmodellen i Betongelementboka pkt. 19.3.4/19.7.2.2 — som forutsetter uarmert betong
+     uten tilleggsarmering — ikke er lagt til grunn for endeforankringen her. Uttrekk av selve
+     forankringen (mutter/plate) er derimot en egen bruddform som ikke dekkes av tilleggsarmeringen,
+     og kontrolleres som partielt belastet areal etter NS-EN 1992-1-1 §6.7; NS-EN 1992-4 gir
+     alternativt <code>N_Rk,p = k₂·A_h·f_ck</code> med <code>k₂ = 7,5</code> (opprisset) /
+     <code>10,5</code> (uopprisset).</li>
  <li><b>Skjærnokk (shear lug):</b> betongtrykk foran nokk på <b>projisert areal</b> <code>A_lug=w·h_emb</code>,
      NS-EN 1992-1-1 §6.7 (evt. ACI 349 App. D / 35°-utbruddskjegle). Nokk reduserer hengarmen til
      <code>e_s*=t_grout+h_emb/2</code>. Kan slås av/på.</li>
