@@ -17,7 +17,7 @@ export const SYM: Record<string, string> = {
   H_pil: "H_pilaster", H_wall: "H_ringmur",
   b: "b", h: "h", t_wall: "t_wall", e_p: "e_p",
   anch_shape: "stangform", K_anch: "K", alpha4: "α_4", p_tr: "p", k_bd_bolt: "k_bd,stag",
-  a1p: "a_1,plate", s_bolt: "s_bolt", h_ef: "h_ef", theta: "θ", c_nom: "c_nom",
+  a1p: "a_1,plate", s_bolt_x: "s_bolt,⊥V", s_bolt_y: "s_bolt,∥V", h_ef: "h_ef", theta: "θ", c_nom: "c_nom",
   n_bolt: "n_bolt", boltsize: "bolt", grade: "klasse", anchor: "endeforankr.",
   a_anch: "a_1,ende", t_pl: "t_plate", fy_pl: "f_y,plate",
   phi_b: "φ_b", n_ben: "n_ben", s_b: "s_b", phi_v: "φ_v", n_v: "n_v",
@@ -43,7 +43,13 @@ const M = (k: keyof Inputs, label: string, unit: string, cmt: string,
   kind: InputMeta["kind"] = "num", opts?: string[], ref?: string): InputMeta =>
   ({ k, label, unit, cmt, kind, opts, ref });
 
-export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
+/** emphasis: framhevet gruppe. Lastene staar oeverst og markeres, fordi de
+ *  settes tilbake til standardverdier ved hver refresh og lett blir oversett. */
+export const INPUT_GROUPS: { title: string; items: InputMeta[]; emphasis?: boolean }[] = [
+  { title: "Laster", emphasis: true, items: [
+    M("N_t", "Aksial strekk N_Ed,t", "kN", "aksial STREKK (lasttilfelle A)"),
+    M("N_c", "Aksial trykk N_Ed,c", "kN", "aksial TRYKK (lasttilfelle B)"),
+    M("V", "Skjær V_Ed", "kN", "horisontal skjærkraft") ] },
   { title: "Geometri", items: [
     M("H_pil", "Pilasterhøyde", "mm", "pilasterhøyde (OK → såle)"),
     M("H_wall", "Ringmurhøyde", "mm", "ringmurhøyde"),
@@ -56,7 +62,10 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
       "avstand fra ringmurens senterlinje til pilasterens senterlinje; 0 = sentrisk. " +
       "Pilasteren trenger ikke flukte med noen murflate"),
     M("a1p", "Bunnplate a₁", "mm", "bunnplate — lastflatebredde (trykk)"),
-    M("s_bolt", "Boltavstand s_bolt", "mm", "senteravstand stag"),
+    M("s_bolt_x", "Boltavstand ⊥V", "mm",
+      "senteravstand mellom stag på tvers av ringmuren (⊥ skjærretningen)"),
+    M("s_bolt_y", "Boltavstand ∥V", "mm",
+      "senteravstand mellom stag langs ringmuren (∥ skjærretningen)"),
     M("h_ef", "Innstøping h_ef", "mm", "innstøpingsdybde stag (mutter/plate i bunn)", "num", undefined, "EC2-4 §7.2.1 (0,75·h_ef effektiv sone)"),
     M("theta", "Spredningsvinkel θ", "°", "spredningsvinkel endetrykk (fra loddrett)", "num", undefined, "stavverksmodell (STM)"),
     M("exp_class", "Eksponeringsklasse", "",
@@ -110,10 +119,6 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
     M("g_s", "γ_s", "–", "materialfaktor armering", "num", undefined, "EC2 NA"),
     M("g_Msre", "γ_Ms,re", "–", "matfaktor tilleggsarmering (EN 1992-4)", "num", undefined, "EC2-4 §4.4.3"),
     M("eta1", "η₁ heftforhold", "–", "heftforhold (1,0 god / 0,7 dårlig)", "num", undefined, "EC2 §8.4.2") ] },
-  { title: "Laster", items: [
-    M("N_t", "Aksial strekk N_Ed,t", "kN", "aksial STREKK (lasttilfelle A)"),
-    M("N_c", "Aksial trykk N_Ed,c", "kN", "aksial TRYKK (lasttilfelle B)"),
-    M("V", "Skjær V_Ed", "kN", "horisontal skjærkraft") ] },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -130,13 +135,12 @@ export const LEVERS: Record<string, Lever[]> = {
   "phi_b_max": [{ k: "phi_b", dir: "ned" }],
   "fyk_max": [{ k: "fyk", dir: "ned" }],
   "bolt_fit": [
-    { k: "b", dir: "opp" }, { k: "h", dir: "opp" }, { k: "s_bolt", dir: "ned" },
+    { k: "b", dir: "opp" }, { k: "h", dir: "opp" }, { k: "s_bolt_x", dir: "ned" }, { k: "s_bolt_y", dir: "ned" },
     { k: "n_bolt", dir: "ned" }],
   "stal": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "n_ben", dir: "opp" }],
   "ank": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "fck", dir: "opp" }],
   "bond": [
     { k: "h_ef", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "anchor", dir: "opp" }],
-  "alpha_prod": [{ k: "s_b", dir: "ned" }, { k: "phi_b", dir: "opp" }],
   "bear": [{ k: "a_anch", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
   "plate": [{ k: "t_pl", dir: "opp" }, { k: "fy_pl", dir: "opp" }],
   "ax": [{ k: "n_v", dir: "opp" }, { k: "phi_v", dir: "opp" }],
@@ -217,8 +221,9 @@ export const FML: Record<string, string> = {
   "c_d": "min(a/2; c₁; c)", "α_1": "1,0 rett / 0,7 krok",
   "α_2": "1−0,15(c_d−φ)/φ", "α_3": "1−K·λ", "α_4": "sveiset tverrarmering",
   "α_5": "1−0,04·p", "λ": "(ΣA_st−ΣA_st,min)/A_s",
+  "α₂α₃α₅": "max(α₂·α₃·α₅; 0,7)",
   "l_b,min": "max(0,3·l_b,rqd; 10φ; 100)",
-  "l_bd": "max(α₁α₂α₃α₄α₅·l_b,rqd; l_b,min)", "l_heft": "h_ef−c_nom",
+  "l_bd": "max(α₁·α₄·(α₂α₃α₅)·l_b,rqd; l_b,min)", "l_heft": "h_ef−c_nom",
 };
 
 /** Standardhenvisning per utgangssymbol. */
@@ -246,7 +251,7 @@ export const REF: Record<string, string> = {
   "η_2": "EC2 §8.4.2", "f_bd,stag": "BEB B19 19.3.4", "σ_sd,stag": "EC2 §8.4.3",
   "l_b,rqd,stag": "EC2 §8.4.3", "c_d": "EC2 §8.4.4 fig. 8.3", "α_1": "EC2 tab. 8.2",
   "α_2": "EC2 tab. 8.2", "α_3": "EC2 tab. 8.2", "α_4": "EC2 tab. 8.2", "α_5": "EC2 tab. 8.2",
-  "λ": "EC2 §8.4.4", "l_b,min": "EC2 §8.4.4 (8.6)", "l_bd": "EC2 §8.4.4 (8.4)",
+  "λ": "EC2 §8.4.4", "α₂α₃α₅": "EC2 §8.4.4 (8.5)", "l_b,min": "EC2 §8.4.4 (8.6)", "l_bd": "EC2 §8.4.4 (8.4)",
   "l_heft": "geometri",
 };
 
@@ -281,7 +286,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("utstikk", `${g.e_p}+${g.b}/2−${g.t_wall}/2`, `${f0(pilasterProjection(g))} mm`);
 
   G("Avledet av tverrsnitt og armeringsmønster (ikke inndata)");
-  D("n_stag", `${g.n_bolt} stag, s_bolt = ${g.s_bolt}`, `${R.boltXY.length} stk`);
+  D("n_stag", `${g.n_bolt} stag, s_bolt = ${g.s_bolt_x}×${g.s_bolt_y}`, `${R.boltXY.length} stk`);
   D("n_v,eff", `ønsket ${g.n_v}`, `${R.n_v_eff} stk`);
   D("e_h", `korteste avstand stag → oppstikk`, `${f1(R.e_h)} mm`);
   D("e_s", `${R.c_nom}+${g.phi_b}/2+${g.s_b}·(${R.n_lag}−1)/2`, `${f0(R.e_s)} mm`);
@@ -349,8 +354,10 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
     D("α_3", `1−${g.K_anch}·${f3(B.lambda)}  (${B.n_tvers} bøylelag langs l_bd)`, f3(B.a3));
     D("α_4", "inndata", f2(B.a4));
     D("α_5", `1−0,04·${g.p_tr}`, f3(B.a5));
+    D("α₂α₃α₅", `max(${f3(B.a2)}·${f3(B.a3)}·${f3(B.a5)} = ${f3(B.alphaProdRaw)}; 0,7)` +
+      (B.prodFloored ? " → nedre grense styrer" : ""), f3(B.alphaProd));
     D("l_b,min", `max(0,3·${f0(B.lb_rqd)}; 10·${R.d_bolt}; 100)`, `${f0(B.lb_min)} mm`);
-    D("l_bd", `max(${f3(B.a1 * B.a2 * B.a3 * B.a4 * B.a5)}·${f0(B.lb_rqd)}; ${f0(B.lb_min)})`,
+    D("l_bd", `max(${f3(B.a1 * B.a4 * B.alphaProd)}·${f0(B.lb_rqd)}; ${f0(B.lb_min)})`,
       `${f0(B.lbd)} mm`);
     D("l_heft", `${g.h_ef}−${R.c_nom}`, `${f0(R.l_avail)} mm`);
   }
@@ -382,7 +389,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   C("fyk_max", "Flytegrense tilleggsarmering", `f_yk ${f0(g.fyk)} ≤ 500 MPa`, g.fyk <= 500, "EC2-4 §7.2.1", g.fyk / 500);
   C("bolt_fit", "Stagmønster i tverrsnittet",
     `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(R.c_nom)} mm` +
-    ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt)})`, R.boltFits, "geometri", R.c_bolt > 0 ? R.c_nom / R.c_bolt : 9);
+    ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt_x)}×${f0(g.s_bolt_y)})`, R.boltFits, "geometri", R.c_bolt > 0 ? R.c_nom / R.c_bolt : 9);
   C("stal", "Stål (bøyler)", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,re ${f1(R.N_Rd_re)} kN  (u=${f2(R.u_stal)})`,
     R.u_stal <= 1, "EC2-4 §7.2.1.9", R.u_stal);
   C("ank", "Forankring bøyle", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,a ${f1(R.N_Rd_a)} kN  (u=${f2(R.u_ank)})`,
@@ -391,7 +398,6 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
     C("bond", "Heftforankring stag",
       `l_bd ${f0(R.bond.lbd)} ≤ h_ef−c ${f0(R.l_avail)} mm  (u=${f2(R.u_bond)})`,
       R.u_bond <= 1, "EC2 §8.4.4", R.u_bond);
-    C("alpha_prod", "α-produkt", `α₂·α₃·α₅ = ${f3(R.bond.alphaProd)} ≥ 0,7`, R.bond.prodOk, "EC2 §8.4.4", 0.7 / R.bond.alphaProd);
   } else {
     C("bear", "Endetrykk", `N_Ed,t/n ${f1(R.F_rod)} ≤ F_Rdu ${f1(R.F_Rdu)} kN  (u=${f2(R.u_bear)})`,
       R.u_bear <= 1, "EC2 §6.7", R.u_bear);

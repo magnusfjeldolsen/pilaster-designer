@@ -157,7 +157,7 @@ describe("moenstre: beregning og modell kan ikke komme ut av synk", () => {
   });
 
   it("n_bolt=4 gir samme kvadratmoenster som foer", () => {
-    const p = boltPattern(4, 200).map(([x, y]) => `${x},${y}`).sort();
+    const p = boltPattern(4, 200, 200).map(([x, y]) => `${x},${y}`).sort();
     expect(p).toEqual(["-100,-100", "-100,100", "100,-100", "100,100"].sort());
   });
 

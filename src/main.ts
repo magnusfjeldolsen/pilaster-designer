@@ -65,10 +65,12 @@ function renderInputs() {
   const host = $("#inputs"); host.innerHTML = "";
   for (const grp of INPUT_GROUPS) {
     const s = document.createElement("div");
-    s.className = "sec"; s.textContent = grp.title; host.appendChild(s);
+    s.className = "sec" + (grp.emphasis ? " emph" : "");
+    s.textContent = grp.title; host.appendChild(s);
     for (const f of grp.items) {
       const row = document.createElement("div");
-      row.className = "row" + (f.kind === "bool" ? " check" : "");
+      row.className = "row" + (f.kind === "bool" ? " check" : "")
+        + (grp.emphasis ? " emph" : "");
       const lab = document.createElement("label");
       lab.textContent = f.label;
       lab.appendChild(helpBadge(f));
@@ -150,14 +152,26 @@ function renderUtil() {
   const body = rows.map((r) => {
     const ign = ignored.has(r.id);
     const cls = ign ? "ign" : uClass(r.u!);
-    return `<div class="ur ${cls}" title="${esc(r.expr)}">` +
+    return `<label class="ur ${cls}" title="${esc(r.expr)}
+Hak av for å se bort fra kontrollen">` +
+      `<input type="checkbox" data-uchk="${esc(r.id)}"${ign ? " checked" : ""}>` +
       `<span class="un">${esc(r.sym)}</span>` +
-      `<span class="uv">${ign ? "ignorert" : pct(r.u!)}</span></div>`;
+      `<span class="uv">${ign ? "ignorert" : pct(r.u!)}</span></label>`;
   }).join("");
   $("#util").innerHTML =
     `<div class="uhead ${st.ok ? "g" : "r"}">${st.ok ? "OK" : "IKKE OK"}` +
     (st.ignored.length ? `<span class="uign">${st.ignored.length} ignorert</span>` : "") +
     `</div>${body}`;
+
+  // samme «se bort fra»-valg som i rapporten - ett felles sett
+  $("#util").querySelectorAll<HTMLInputElement>("input[data-uchk]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.uchk!;
+      cb.checked ? ignored.add(id) : ignored.delete(id);
+      save(LS_IGNORE, [...ignored].join(","));
+      renderUtil(); renderHints();
+      if (tab === "doc") renderDoc();
+    }));
 }
 
 /* ---------------- 2D ---------------- */

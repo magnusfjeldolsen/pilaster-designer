@@ -224,7 +224,7 @@ describe("betongfastheter avledet av f_ck (EC2 tab. 3.1)", () => {
 describe("stagmoensteret maa faa plass i tverrsnittet", () => {
   it("default (4 stag) har god overdekning", () => {
     const R = compute(DEFAULTS);
-    expect(R.c_bolt).toBeCloseTo(DEFAULTS.b / 2 - DEFAULTS.s_bolt / 2 - R.d_bolt / 2, 6);
+    expect(R.c_bolt).toBeCloseTo(DEFAULTS.b / 2 - DEFAULTS.s_bolt_x / 2 - R.d_bolt / 2, 6);
     expect(R.boltFits).toBe(true);
   });
   it("6 stag med samme s_bolt sprenger tverrsnittet -> ikke OK", () => {
@@ -236,6 +236,53 @@ describe("stagmoensteret maa faa plass i tverrsnittet", () => {
   });
   it("stoerre tverrsnitt eller tettere moenster gjoer det OK igjen", () => {
     expect(compute({ ...DEFAULTS, n_bolt: 6, b: 700, h: 700 }).boltFits).toBe(true);
-    expect(compute({ ...DEFAULTS, n_bolt: 6, s_bolt: 110 }).boltFits).toBe(true);
+    expect(compute({ ...DEFAULTS, n_bolt: 6, s_bolt_x: 110, s_bolt_y: 110 }).boltFits).toBe(true);
+  });
+});
+
+describe("alfa-produktet er en nedre grense, ikke en kontroll (EC2 8.5)", () => {
+  // Hver alfa klemmes for seg til [0,7; 1,0], saa produktet kommer under 0,7 foerst
+  // naar TO av dem ligger i bunn: stor overdekning (a2=0,7) + hoyt tverrtrykk (a5=0,7).
+  const v: Inputs = {
+    ...DEFAULTS, anchor: "ingen", b: 800, h: 800, boltsize: "M20",
+    s_bolt_x: 200, s_bolt_y: 200, p_tr: 8,
+  };
+  it("produktet klemmes opp til 0,70 naar det raa produktet er lavere", () => {
+    const B = compute(v).bond;
+    expect(B.alphaProdRaw).toBeLessThan(0.7);
+    expect(B.prodFloored).toBe(true);
+    expect(B.alphaProd).toBeCloseTo(0.7, 9);
+  });
+  it("l_bd bruker det klemte produktet, ikke det raa", () => {
+    const B = compute(v).bond;
+    expect(B.lbd).toBeCloseTo(
+      Math.max(B.a1 * B.a4 * B.alphaProd * B.lb_rqd, B.lb_min), 6);
+    // det raa produktet ville gitt kortere - altsaa unnagjort paa feil side
+    expect(B.a1 * B.a4 * B.alphaProdRaw * B.lb_rqd).toBeLessThan(B.a1 * B.a4 * B.alphaProd * B.lb_rqd);
+  });
+  it("uendret naar produktet allerede er over 0,70", () => {
+    const B = compute({ ...DEFAULTS, anchor: "ingen" }).bond;
+    expect(B.prodFloored).toBe(false);
+    expect(B.alphaProd).toBeCloseTo(B.alphaProdRaw, 9);
+  });
+});
+
+describe("boltavstand kan variere ⊥V og ∥V", () => {
+  it("moensteret foelger de to senteravstandene hver for seg", () => {
+    const v: Inputs = { ...DEFAULTS, n_bolt: 4, s_bolt_x: 120, s_bolt_y: 260 };
+    const p = compute(v).boltXY;
+    expect(new Set(p.map(([x]) => Math.abs(x))).size).toBe(1);
+    expect(Math.abs(p[0][0])).toBeCloseTo(60, 6);    // 120/2 paa tvers
+    expect(Math.abs(p[0][1])).toBeCloseTo(130, 6);   // 260/2 langs
+  });
+  it("overdekningen maales mot rett retning i hver akse", () => {
+    const v: Inputs = { ...DEFAULTS, s_bolt_x: 120, s_bolt_y: 300 };
+    const R = compute(v);
+    expect(R.bond.c_side).toBeCloseTo(v.b / 2 - 60 - R.d_bolt / 2, 6);
+    expect(R.bond.c_edge).toBeCloseTo(v.h / 2 - 150 - R.d_bolt / 2, 6);
+  });
+  it("for stor avstand langs V sprenger tverrsnittet", () => {
+    expect(compute({ ...DEFAULTS, s_bolt_y: 400 }).boltFits).toBe(false);
+    expect(compute({ ...DEFAULTS, s_bolt_y: 200 }).boltFits).toBe(true);
   });
 });

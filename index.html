@@ -21,6 +21,11 @@
     .row .u{font-size:10.5px;color:var(--ink3)}
     .row label{display:flex;align-items:center;gap:5px}
 
+    /* lastene staar oeverst og framheves - de nullstilles ved refresh */
+    .sec.emph{color:var(--ink);background:var(--surf2);border-left:3px solid var(--acc);
+      border-radius:0 5px 5px 0;padding:5px 8px;margin:2px 0 6px}
+    .row.emph input{border-color:var(--acc);font-weight:700}
+
     /* ---- «?»-hjelpeboks ---- */
     .q{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
       border-radius:50%;border:1px solid var(--line);background:var(--surf2);color:var(--ink3);
@@ -66,8 +71,11 @@
       margin-bottom:4px;display:flex;justify-content:space-between;align-items:baseline}
     #util .uhead.g{color:var(--good)} #util .uhead.r{color:var(--bad)}
     #util .uign{font-weight:400;font-size:10.5px;color:var(--ink3)}
-    #util .ur{display:flex;justify-content:space-between;gap:8px;padding:1.5px 2px;border-radius:4px}
+    #util .ur{display:flex;align-items:center;gap:6px;padding:1.5px 3px;border-radius:4px;cursor:pointer}
+    #util .ur input{margin:0;flex:0 0 auto;cursor:pointer;width:11px;height:11px}
+    #util .un{flex:1 1 auto}
     #util .un{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #util .ur:hover{background:var(--surf2)}
     #util .uv{font-family:var(--mono);font-weight:700;white-space:nowrap}
     #util .ur.g .uv{color:var(--good)} #util .ur.o .uv{color:#d98014}
     #util .ur.r .uv{color:var(--bad)} #util .ur.r{background:#fdeaea}

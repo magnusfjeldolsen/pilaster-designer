@@ -81,7 +81,8 @@ export interface Inputs {
   H_pil: number; H_wall: number; b: number; h: number; t_wall: number;
   // e_h (stag -> naermeste oppstikk) og e_s (V -> boyletyngdepunkt) legges IKKE inn:
   // begge foelger entydig av tverrsnittet, boltmoensteret og boylelagene.
-  a1p: number; s_bolt: number; h_ef: number;
+  // Boltmoensteret kan ha ulik senteravstand paa tvers av og langs skjaerretningen.
+  a1p: number; s_bolt_x: number; s_bolt_y: number; h_ef: number;
   theta: number;
   // c_nom legges IKKE inn: den avledes av eksponeringsklasse etter EC2 §4.4.1.
   exp_class: ExposureClass; design_life: number; dc_dev: number;
@@ -118,7 +119,7 @@ export const GRADES = ["4.6", "5.6", "5.8", "6.8", "8.8", "10.9", "12.9"];
 
 export const DEFAULTS: Inputs = {
   H_pil: 900, H_wall: 900, b: 400, h: 400, t_wall: 250,
-  a1p: 300, s_bolt: 200, h_ef: 500, theta: 45,
+  a1p: 300, s_bolt_x: 200, s_bolt_y: 200, h_ef: 500, theta: 45,
   exp_class: "XD1/XS1", design_life: 50, dc_dev: 10,
   e_p: 75,
   n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
@@ -136,7 +137,9 @@ export interface BondAnchorage {
   a_clear: number; c_side: number; c_edge: number; cd: number;
   n_tvers: number; sumAst: number; sumAstMin: number; lambda: number;
   a1: number; a2: number; a3: number; a4: number; a5: number;
-  alphaProd: number; prodOk: boolean;
+  // EC2 (8.5): produktet (a2*a3*a5) skal ikke settes lavere enn 0,7. Det er en
+  // NEDRE GRENSE paa verdien som brukes - ikke en kontroll som kan ryke.
+  alphaProdRaw: number; alphaProd: number; prodFloored: boolean;
   lb_rqd: number; lb_min: number; lbd: number;
 }
 
@@ -144,15 +147,16 @@ export interface BondAnchorage {
  *  Rutenettet gjoeres saa kvadratisk som mulig; primtall faller tilbake til én rad.
  *  Dette er ETT sannhetsgrunnlag: bade compute(), buildModel() og 2D-planen bruker det,
  *  slik at antall stag i beregningen alltid er antallet som faktisk tegnes. */
-export function boltPattern(n_bolt: number, s_bolt: number): [number, number][] {
+export function boltPattern(n_bolt: number, sx: number, sy: number): [number, number][] {
   const n = Math.max(1, Math.round(n_bolt));
   let nx = Math.round(Math.sqrt(n));
   while (nx > 1 && n % nx !== 0) nx--;
+  // flest rader langs den retningen som har stoerst senteravstand aa gi bort
   const [cx, cy] = nx >= n / nx ? [nx, n / nx] : [n / nx, nx];
   const pts: [number, number][] = [];
   for (let i = 0; i < cx; i++)
     for (let j = 0; j < cy; j++)
-      pts.push([(i - (cx - 1) / 2) * s_bolt, (j - (cy - 1) / 2) * s_bolt]);
+      pts.push([(i - (cx - 1) / 2) * sx, (j - (cy - 1) / 2) * sy]);
   return pts;
 }
 
@@ -249,7 +253,7 @@ export function compute(g: Inputs): Results {
 
   // ---- Geometri utledet av tverrsnitt + moenstre (ikke inndata) ----
   const ins = cageInsets(g, c_nom);
-  const boltXY = boltPattern(g.n_bolt, g.s_bolt);
+  const boltXY = boltPattern(g.n_bolt, g.s_bolt_x, g.s_bolt_y);
   const barXY = barPattern(g.n_v, ins.rxV, ins.ryV);
   const n_v_eff = barXY.length;              // det som FAKTISK plasseres
   // e_h: korteste horisontale avstand fra et stag til naermeste oppstikk.
@@ -293,7 +297,12 @@ export function compute(g: Inputs): Results {
   // Brukes som kontroll naar staget ikke har endeforankring ("ingen").
   const As_l = g.n_bolt * As_bolt;                       // samlet stagareal
   const sig_bolt = F_rod * 1000 / As_bolt;               // dimensjonerende stagspenning
-  const a_clear = Math.max(g.s_bolt - d_bolt, 0);        // fri avstand mellom stag
+  // fri avstand mellom naermeste nabostag i moensteret
+  let sMin = Infinity;
+  for (let i = 0; i < boltXY.length; i++)
+    for (let j = i + 1; j < boltXY.length; j++)
+      sMin = Math.min(sMin, Math.hypot(boltXY[i][0] - boltXY[j][0], boltXY[i][1] - boltXY[j][1]));
+  const a_clear = Math.max((Number.isFinite(sMin) ? sMin : 0) - d_bolt, 0);
   // overdekning fra stag til naermeste betongflate, i hver retning
   // overdekning maales fra det YTTERSTE staget i moensteret
   const bxMax = Math.max(...boltXY.map((p) => Math.abs(p[0])));
@@ -322,16 +331,18 @@ export function compute(g: Inputs): Results {
     sumAst = n_tvers * g.n_ben * A_phb;
     lambda = (sumAst - sumAstMin) / As_l;
     ba3 = clamp07(1 - g.K_anch * lambda);
-    const next = Math.max(ba1 * ba2 * ba3 * ba4 * ba5 * lb_rqd_bolt, lb_min_bolt);
+    const prod = Math.max(ba2 * ba3 * ba5, 0.7);              // EC2 (8.5)
+    const next = Math.max(ba1 * ba4 * prod * lb_rqd_bolt, lb_min_bolt);
     if (Math.abs(next - lbd) < 0.05) { lbd = next; break; }
     lbd = 0.5 * (lbd + next);                            // demping mot oscillasjon
   }
-  const alphaProd = ba2 * ba3 * ba5;
+  const alphaProdRaw = ba2 * ba3 * ba5;
+  const alphaProd = Math.max(alphaProdRaw, 0.7);
   const bond: BondAnchorage = {
     phi: d_bolt, sigma_sd: sig_bolt, eta2: eta2_bolt, fbd: fbd_bolt,
     a_clear, c_side, c_edge, cd, n_tvers, sumAst, sumAstMin, lambda,
     a1: ba1, a2: ba2, a3: ba3, a4: ba4, a5: ba5,
-    alphaProd, prodOk: alphaProd >= 0.7 - 1e-9,
+    alphaProdRaw, alphaProd, prodFloored: alphaProdRaw < 0.7 - 1e-9,
     lb_rqd: lb_rqd_bolt, lb_min: lb_min_bolt, lbd,
   };
   const l_avail = Math.max(g.h_ef - c_nom, 1e-6);      // tilgjengelig heftlengde

@@ -227,7 +227,7 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
   out.push(tx(cx + 59, top - 21, "V", C.acc, 12, "start", "700"));
 
   // stag / oppstikk-geometri
-  const bx = Math.max(15, Math.min(pxB * 0.2, v.s_bolt * 0.42 / 2));
+  const bx = Math.max(15, Math.min(pxB * 0.2, v.s_bolt_y * 0.42 / 2));
   const boltL = cx - bx, boltR = cx + bx;
   const nutY = Math.min(pilBot - 14, top + v.h_ef * s);
   const ehpx = Math.max(12, Math.min(pxB * 0.3, R.e_h * 0.42));
