@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compute, DEFAULTS, type Inputs } from "./calc";
+import { compute, concreteProps, DEFAULTS, type Inputs } from "./calc";
 
 describe("compute() – materialer og bolt", () => {
   const R = compute(DEFAULTS);
@@ -155,7 +155,7 @@ describe("compute() – heftkoeffisient for gjengestang (BEB B19 19.3.4)", () =>
   it("default k_bd = 1,90 gir f_bd = 1,077 * f_ctk,0,05", () => {
     expect(DEFAULTS.k_bd_bolt).toBe(1.9);
     const R = compute(v);
-    expect(R.fbd_bolt).toBeCloseTo(1.077 * v.fctk, 2);           // 1,90*0,85/1,5 = 1,077
+    expect(R.fbd_bolt).toBeCloseTo(1.077 * R.conc.fctk005, 2);   // 1,90*0,85/1,5 = 1,077
     expect(R.fbd_bolt / R.fbd).toBeCloseTo(1.9 / 2.25, 6);       // 0,84 av kamstaal
   });
   it("kamstaal (boyle/oppstikk) beholder 2,25", () => {
@@ -167,5 +167,48 @@ describe("compute() – heftkoeffisient for gjengestang (BEB B19 19.3.4)", () =>
     const full = compute({ ...v, k_bd_bolt: 2.25 });
     expect(full.fbd_bolt).toBeCloseTo(full.fbd, 6);
     expect(full.bond.lbd).toBeLessThan(compute(v).bond.lbd);
+  });
+});
+
+describe("betongfastheter avledet av f_ck (EC2 tab. 3.1)", () => {
+  it("C35 reproduserer tabellverdiene", () => {
+    const c = concreteProps(35);
+    expect(c.fcm).toBe(43);
+    expect(c.fctm).toBeCloseTo(3.2, 1);
+    expect(c.fctk005).toBeCloseTo(2.2, 1);      // tabell: 2,2
+    expect(c.fctk095).toBeCloseTo(4.2, 1);      // tabell: 4,2
+    expect(c.Ecm / 1000).toBeCloseTo(34, 0);    // tabell: 34 GPa
+  });
+
+  it("treffer tabell 3.1 for flere fasthetsklasser", () => {
+    // [f_ck, f_ctm, f_ctk005, f_ctk095, E_cm(GPa)] fra NS-EN 1992-1-1 tabell 3.1
+    const tab: [number, number, number, number, number][] = [
+      [20, 2.2, 1.5, 2.9, 30],
+      [25, 2.6, 1.8, 3.3, 31],
+      [30, 2.9, 2.0, 3.8, 33],
+      [40, 3.5, 2.5, 4.6, 35],
+      [50, 4.1, 2.9, 5.3, 37],
+      [60, 4.4, 3.1, 5.7, 39],   // over C50/60 -> logaritmisk uttrykk
+      [70, 4.6, 3.2, 6.0, 41],
+    ];
+    for (const [fck, fctm, f05, f95, Ec] of tab) {
+      const c = concreteProps(fck);
+      // Tabell 3.1 er avrundet til 1 desimal, og fraktilene er dessuten regnet av det
+      // AVRUNDEDE f_ctm (0,7*4,4 = 3,08 ~ 3,1 for C60, mot 3,05 uavrundet). Vi regner
+      // ubrutt av formlene og godtar derfor avviket fra avrundingen: <= 0,06 MPa.
+      expect(c.fctm, `f_ctm for C${fck}`).toBeCloseTo(fctm, 1);
+      expect(Math.abs(c.fctk005 - f05), `f_ctk,0.05 for C${fck}`).toBeLessThanOrEqual(0.06);
+      expect(Math.abs(c.fctk095 - f95), `f_ctk,0.95 for C${fck}`).toBeLessThanOrEqual(0.06);
+      expect(c.Ecm / 1000, `E_cm for C${fck}`).toBeCloseTo(Ec, 0);
+    }
+  });
+
+  it("f_ctd foelger f_ck automatisk - ingen egen inndata", () => {
+    expect(DEFAULTS).not.toHaveProperty("fctk");
+    const R35 = compute(DEFAULTS), R45 = compute({ ...DEFAULTS, fck: 45 });
+    expect(R35.fctd).toBeCloseTo(DEFAULTS.a_ct * R35.conc.fctk005 / DEFAULTS.g_c, 9);
+    expect(R45.conc.fctk005).toBeGreaterThan(R35.conc.fctk005);
+    expect(R45.fctd).toBeGreaterThan(R35.fctd);   // hoyere klasse -> hoyere heft
+    expect(R45.fbd).toBeGreaterThan(R35.fbd);
   });
 });

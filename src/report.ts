@@ -20,7 +20,7 @@ export const SYM: Record<string, string> = {
   a_anch: "a_1,ende", t_pl: "t_plate", fy_pl: "f_y,plate",
   phi_b: "φ_b", n_ben: "n_ben", s_b: "s_b", phi_v: "φ_v", n_v: "n_v",
   use_lug: "skjærnokk", w_lug: "w_lug", h_emb: "h_emb", t_grout: "t_grout", k_lug: "k_lug",
-  fck: "f_ck", a_cc: "α_cc", a_ct: "α_ct", g_c: "γ_c", fctk: "f_ctk", fyk: "f_yk", g_s: "γ_s",
+  fck: "f_ck", a_cc: "α_cc", a_ct: "α_ct", g_c: "γ_c", fyk: "f_yk", g_s: "γ_s",
   g_Msre: "γ_Ms,re", eta1: "η_1", N_t: "N_Ed,t", N_c: "N_Ed,c", V: "V_Ed",
 };
 
@@ -91,11 +91,11 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
     M("t_grout", "Slissestøp t_grout", "mm", "slissestøp/mørtel over betong"),
     M("k_lug", "Trykkfaktor k_lug", "–", "trykkfaktor betong foran nokk (§6.7, ≤3)") ] },
   { title: "Materialer", items: [
-    M("fck", "f_ck", "MPa", "betong C35"),
+    M("fck", "f_ck", "MPa",
+      "sylinderfasthet betong — f_cm, f_ctm, f_ctk,0.05 og E_cm avledes av denne (tab. 3.1)"),
     M("a_cc", "α_cc", "–", "NA trykkfaktor"),
     M("a_ct", "α_ct", "–", "NA strekkfaktor"),
     M("g_c", "γ_c", "–", "materialfaktor betong"),
-    M("fctk", "f_ctk,0.05", "MPa", "f_ctk,0.05 (C35)"),
     M("fyk", "f_yk", "MPa", "B500NC"),
     M("g_s", "γ_s", "–", "materialfaktor armering"),
     M("g_Msre", "γ_Ms,re", "–", "matfaktor tilleggsarmering (EN 1992-4)"),
@@ -108,6 +108,8 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
 
 /** Symbolsk formel per utgangssymbol. */
 export const FML: Record<string, string> = {
+  "f_cm": "f_ck+8", "f_ctm": "0,30·f_ck^(2/3)  (>C50/60: 2,12·ln(1+f_cm/10))",
+  "f_ctk,0.05": "0,7·f_ctm", "f_ctk,0.95": "1,3·f_ctm", "E_cm": "22000·(f_cm/10)^0,3",
   "f_cd": "α_cc·f_ck/γ_c", "f_ctd": "α_ct·f_ctk,0.05/γ_c", "f_bd": "2,25·η₁·η₂·f_ctd",
   "f_yd": "f_yk/γ_s", "A_φb": "π·φ_b²/4", "A_s,re": "n_ben·n_lag·A_φb",
   "A_s,bolt": "π/4·(d−0,9382·P)²", "f_ub": "X·100", "f_yb": "f_ub·Y/10",
@@ -136,6 +138,8 @@ export const FML: Record<string, string> = {
 
 /** Standardhenvisning per utgangssymbol. */
 export const REF: Record<string, string> = {
+  "f_cm": "EC2 tab. 3.1", "f_ctm": "EC2 tab. 3.1", "f_ctk,0.05": "EC2 tab. 3.1",
+  "f_ctk,0.95": "EC2 tab. 3.1", "E_cm": "EC2 tab. 3.1",
   "f_cd": "EC2 §3.1.6 +NA", "f_ctd": "EC2 §3.1.6", "f_bd": "EC2 §8.4.2", "f_yd": "EC2 §3.2.7",
   "A_φb": "geometri", "A_s,re": "EC2-4 §7.2.1", "N_Ed,re·V": "EC2-4 §7.2.2.5",
   "A_s,bolt": "ISO 898-1", "f_ub": "EN 1993-1-8", "f_yb": "EN 1993-1-8",
@@ -170,9 +174,17 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   const C = (sym: string, expr: string, ok: boolean, ref: string) =>
     cur.rows.push({ kind: "check", sym, expr, ok, ref });
 
-  G("Materialkonstanter");
+  G("Betongens fasthetsegenskaper — avledet av f_ck (NS-EN 1992-1-1 tab. 3.1)");
+  D("f_cm", `${g.fck}+8`, `${f1(R.conc.fcm)} MPa`);
+  D("f_ctm", g.fck <= 50 ? `0,30·${g.fck}^(2/3)` : `2,12·ln(1+${f1(R.conc.fcm)}/10)`,
+    `${f2(R.conc.fctm)} MPa`);
+  D("f_ctk,0.05", `0,7·${f2(R.conc.fctm)}`, `${f2(R.conc.fctk005)} MPa`);
+  D("f_ctk,0.95", `1,3·${f2(R.conc.fctm)}`, `${f2(R.conc.fctk095)} MPa`);
+  D("E_cm", `22000·(${f1(R.conc.fcm)}/10)^0,3`, `${f0(R.conc.Ecm)} MPa`);
+
+  G("Dimensjonerende materialverdier");
   D("f_cd", `${g.a_cc}·${g.fck}/${g.g_c}`, `${f2(R.fcd)} MPa`);
-  D("f_ctd", `${g.a_ct}·${g.fctk}/${g.g_c}`, `${f3(R.fctd)} MPa`);
+  D("f_ctd", `${g.a_ct}·${f2(R.conc.fctk005)}/${g.g_c}`, `${f3(R.fctd)} MPa`);
   D("f_bd", `2,25·${g.eta1}·1,0·${f3(R.fctd)}`, `${f2(R.fbd)} MPa`);
   D("f_yd", `${g.fyk}/${g.g_s}`, `${f0(R.fyd)} MPa`);
 
@@ -378,7 +390,11 @@ export const ASSUMPTIONS_HTML = `
      Eksentrisiteten gjelder kun geometri/uttegning; kapasitetsmodellen forutsetter leddet søylefot uten
      moment og påvirkes derfor ikke av plasseringen. Skjær på tvers av muren (og samtidig skjær i to
      retninger) er <b>ikke</b> dekket av denne versjonen.</li>
- <li><b>Materialer:</b> Betong C35 (f_ck=35 MPa, f_ctk,0.05=2,25 MPa — tab. 3.1); armering B500NC
+ <li><b>Materialer:</b> Betongens fasthetsegenskaper legges <b>ikke</b> inn manuelt — kun
+     <code>f_ck</code> velges, og <code>f_cm=f_ck+8</code>, <code>f_ctm=0,30·f_ck^(2/3)</code>
+     (over C50/60: <code>2,12·ln(1+f_cm/10)</code>), <code>f_ctk,0.05=0,7·f_ctm</code>,
+     <code>f_ctk,0.95=1,3·f_ctm</code> og <code>E_cm=22000·(f_cm/10)^0,3</code> avledes av den
+     etter NS-EN 1992-1-1 tabell 3.1. Armering B500NC
      (f_yk=500 MPa); γ_c=1,5, γ_s=1,15.</li>
  <li><b>Modellforutsetninger:</b> Leddet søylefot (aksial ± og skjær, uten moment). Bøyler tar spaltestrekk
      (ende + plate) + skjærfagverk <code>V·(1+e_s/z)</code> (konservativ addisjon). Aksialstrekket føres av

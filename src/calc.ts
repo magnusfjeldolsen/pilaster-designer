@@ -10,6 +10,25 @@ export type AnchorKind = "ingen" | "mutter" | "plate";
 /** Faktor for stangdiameter, NS-EN 1992-1-1 §8.4.2 (2). */
 export const eta2Of = (phi: number) => (phi <= 32 ? 1 : (132 - phi) / 100);
 
+/** Betongens fasthetsegenskaper avledet av f_ck etter NS-EN 1992-1-1 tabell 3.1.
+ *  Ingen av disse skal legges inn manuelt - de foelger entydig av fasthetsklassen. */
+export interface ConcreteProps {
+  fcm: number;      // middelverdi trykkfasthet     = f_ck + 8
+  fctm: number;     // middelverdi strekkfasthet
+  fctk005: number;  // 5 %-fraktil strekkfasthet    = 0,7*f_ctm
+  fctk095: number;  // 95 %-fraktil strekkfasthet   = 1,3*f_ctm
+  Ecm: number;      // sekantmodul [MPa]            = 22000*(f_cm/10)^0,3
+}
+export function concreteProps(fck: number): ConcreteProps {
+  const fcm = fck + 8;
+  // over C50/60 flater strekkfastheten ut -> logaritmisk uttrykk (tab. 3.1)
+  const fctm = fck <= 50 ? 0.30 * Math.pow(fck, 2 / 3) : 2.12 * Math.log(1 + fcm / 10);
+  return {
+    fcm, fctm, fctk005: 0.7 * fctm, fctk095: 1.3 * fctm,
+    Ecm: 22000 * Math.pow(fcm / 10, 0.3),
+  };
+}
+
 /** Noekkelvidde for sekskantmutter som funksjon av gjengediameter. */
 export const NUT_ACROSS_FLATS = 1.5;
 
@@ -35,7 +54,8 @@ export interface Inputs {
   // skjaernokk
   use_lug: boolean; w_lug: number; h_emb: number; t_grout: number; k_lug: number;
   // materialer
-  fck: number; a_cc: number; a_ct: number; g_c: number; fctk: number;
+  // f_ctk,0.05 legges IKKE inn: den avledes av f_ck via tabell 3.1 (concreteProps).
+  fck: number; a_cc: number; a_ct: number; g_c: number;
   fyk: number; g_s: number; g_Msre: number; eta1: number;
   // laster [kN]
   N_t: number; N_c: number; V: number;
@@ -56,7 +76,7 @@ export const DEFAULTS: Inputs = {
   anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0, k_bd_bolt: 1.9,
   phi_b: 12, n_ben: 2, s_b: 100, phi_v: 25, n_v: 8,
   use_lug: false, w_lug: 150, h_emb: 80, t_grout: 30, k_lug: 2.0,
-  fck: 35, a_cc: 0.85, a_ct: 0.85, g_c: 1.5, fctk: 2.25,
+  fck: 35, a_cc: 0.85, a_ct: 0.85, g_c: 1.5,
   fyk: 500, g_s: 1.15, g_Msre: 1.15, eta1: 1.0,
   N_t: 400, N_c: 500, V: 150,
 };
@@ -72,6 +92,7 @@ export interface BondAnchorage {
 }
 
 export interface Results {
+  conc: ConcreteProps;
   fcd: number; fctd: number; fbd: number; fbd_b: number; fbd_bolt: number; fyd: number;
   eta2_b: number; eta2_v: number; eta2_bolt: number;
   d_bolt: number; P_bolt: number; As_bolt: number; fub: number; fyb: number; gMs_b: number;
@@ -91,7 +112,9 @@ export interface Results {
 export function compute(g: Inputs): Results {
   const PI = Math.PI;
   const clamp07 = (x: number) => Math.min(Math.max(x, 0.7), 1.0);
-  const fcd = g.a_cc * g.fck / g.g_c, fctd = g.a_ct * g.fctk / g.g_c;
+  // Betongfasthetene foelger av f_ck alene (tab. 3.1) - ikke inndata.
+  const CP = concreteProps(g.fck);
+  const fcd = g.a_cc * g.fck / g.g_c, fctd = g.a_ct * CP.fctk005 / g.g_c;
   const fyd = g.fyk / g.g_s;
   const BS = BOLT_SIZES[g.boltsize] ?? BOLT_SIZES.M30;
   const d_bolt = BS.d, P_bolt = BS.P;
@@ -203,6 +226,7 @@ export function compute(g: Inputs): Results {
     ...(isPlate ? [u_plate] : []), ...(use_lug ? [u_lug] : [])];
   const allOk = checks.every((u) => u <= 1.0001);
   return {
+    conc: CP,
     fcd, fctd, fbd, fbd_b, fbd_bolt, fyd, eta2_b, eta2_v, eta2_bolt,
     d_bolt, P_bolt, As_bolt, fub, fyb, gMs_b,
     isPlate, isNut, noAnchor, a_eff, a_nut, bond, l_avail, u_bond,
