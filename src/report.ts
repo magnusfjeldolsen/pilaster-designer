@@ -218,7 +218,8 @@ export const FML: Record<string, string> = {
   "σ_sd": "N_Ed,t/(n_v·A_v) ≤ f_yd",
   "l_b,rqd": "(φ_v/4)·(σ_sd/f_bd)", "l_0": "α₆·l_b,rqd ≥ l_0,min",
   "l_spred": "e_h/tan θ", "h_ef,nødv": "l_spred+l_overf+c_nom",
-  "l_bd,v": "α₁·α₄·(α₂α₃α₅)·l_b,rqd ≥ l_b,min", "l_overf": "l_0 uten endeforankring, ellers l_bd",
+  "l_bd,v": "α₁·α₄·(α₂α₃α₅)·l_b,rqd ≥ l_b,min",
+  "a_skjøt": "e_h − d/2 − φ_v/2", "Δl_0": "+a_skjøt når a_skjøt > max(4φ_v; 50)", "l_overf": "l_0 uten endeforankring, ellers l_bd",
   "N_re,A": "T_mutter+N_Ed,re·V", "N_re,B": "T_plate+N_Ed,re·V",
   "N_Ed,re": "max(N_re,A; N_re,B)", "N_Rd,re": "A_s,re·f_yk/γ_Ms,re",
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
@@ -254,7 +255,7 @@ export const REF: Record<string, string> = {
   "t_pl,nødv": "EN 1993-1-8",
   "σ_sd": "EC2 §8.7.3", "l_b,rqd": "EC2 §8.4.3", "l_0": "EC2 §8.7.3",
   "l_spred": "STM 45°", "h_ef,nødv": "STM/§8.7",
-  "l_bd,v": "EC2 §8.4.4", "l_overf": "EC2 §8.4.4/§8.7.3",
+  "l_bd,v": "EC2 §8.4.4", "a_skjøt": "EC2 §8.7.2(3)", "Δl_0": "EC2 §8.7.2(3)", "l_overf": "EC2 §8.4.4/§8.7.3",
   "N_re,A": "superposisjon", "N_re,B": "superposisjon",
   "N_Ed,re": "dim.", "N_Rd,re": "EC2-4 §7.2.1.9", "N_Rd,a": "EC2-4 §7.2.1/EC2 §8.4",
   "s_b,maks": "dim.", "e_p": "geometri", "utstikk": "geometri", "a_eff": "EC2 §6.7",
@@ -381,6 +382,11 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("l_b,rqd", `(${g.phi_v}/4)(${f0(R.sig_sd)}/${f2(R.fbd)})`, `${f0(R.lb_rqd)} mm`);
   D("l_0", `α-produkt·${f2(R.a6)}·${f0(R.lb_rqd)} (≥ 15φ = ${f0(15 * g.phi_v)})`,
     `${f0(R.l0)} mm`);
+  D("a_skjøt", `${f1(R.e_h)}−${R.d_bolt}/2−${g.phi_v}/2`, `${f1(R.lapClear)} mm`);
+  D("Δl_0", R.lapExtra > 0
+    ? `${f1(R.lapClear)} > max(4·${g.phi_v}; 50) = ${f0(R.lapClearLim)} → tillegg`
+    : `${f1(R.lapClear)} ≤ max(4·${g.phi_v}; 50) = ${f0(R.lapClearLim)} → intet tillegg`,
+    `${f0(R.lapExtra)} mm`);
   D("l_bd,v", `≥ max(0,3·l_b,rqd; 10φ = ${f0(10 * g.phi_v)}; 100)`, `${f0(R.lbd_v)} mm`);
   D("l_overf", R.noAnchor
     ? "ingen endeforankring → kraften skjøtes over i oppstikkene (omfaring l₀)"
@@ -546,6 +552,10 @@ export const ASSUMPTIONS_HTML = `
      «som for kjeglebrudd <i>uten heft langs stangen</i>». Nødvendig innstøping blir dermed
      <code>h_ef,nødv = e_h/tan θ + l_overf + c_nom</code>, der <code>l_overf</code> er
      <code>l₀</code> uten endeforankring og <code>l_bd</code> med.
+     Staget og oppstikket ligger ikke inntil hverandre, så §8.7.2(3) gjelder: er den frie
+     avstanden mellom dem større enn <code>max(4φ_v; 50 mm)</code>, økes omfaringen med et
+     tillegg lik den frie avstanden. Tillegget slår bare inn der det <i>er</i> en skjøt, altså
+     uten endeforankring.
      Spenningen som legges til grunn er <code>σ_sd = N_Ed,t/(n_v·A_v)</code> — hele strekket
      fordelt på <b>alle</b> oppstikkene, samme grunnlag som <code>N_Rd,v</code>.</li>
  <li><b>Modellforutsetninger:</b> Leddet søylefot (aksial ± og skjær, uten moment). Bøyler tar spaltestrekk

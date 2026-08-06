@@ -337,3 +337,47 @@ describe("overfoering stag -> oppstikk og noedvendig innstoping", () => {
     expect(R.h_ef_req).toBeLessThan(400);           // var over 900 mm foer
   });
 });
+
+describe("skjoet mellom stag og oppstikk som ikke ligger inntil hverandre (§8.7.2(3))", () => {
+  it("fri avstand maales mellom overflatene, ikke senter-senter", () => {
+    const R = compute(DEFAULTS);
+    expect(R.lapClear).toBeCloseTo(R.e_h - R.d_bolt / 2 - DEFAULTS.phi_v / 2, 6);
+    expect(R.lapClearLim).toBe(Math.max(4 * DEFAULTS.phi_v, 50));
+  });
+
+  it("intet tillegg naar avstanden er under grensa", () => {
+    const R = compute({ ...DEFAULTS, anchor: "ingen" });
+    expect(R.lapClear).toBeLessThan(R.lapClearLim);   // 16 mm mot 100 mm
+    expect(R.lapExtra).toBe(0);
+  });
+
+  it("over grensa oekes omfaringen med hele den frie avstanden", () => {
+    const v = { ...DEFAULTS, anchor: "ingen" as const, b: 800, h: 800 };
+    const R = compute(v);
+    expect(R.lapClear).toBeGreaterThan(R.lapClearLim);
+    expect(R.lapExtra).toBeCloseTo(R.lapClear, 6);
+    // tillegget ligger faktisk i l_0 og dermed i noedvendig innstoping
+    const uten = compute({ ...v, phi_v: 60 });        // 4*60 = 240 > fri avstand -> ingen tillegg
+    expect(uten.lapExtra).toBe(0);
+    expect(R.h_ef_req).toBeGreaterThan(500);
+  });
+
+  it("aa flytte oppstikkene naermere stagene forkorter omfaringen", () => {
+    const wide = { ...DEFAULTS, anchor: "ingen" as const, b: 800, h: 800 };
+    const far = compute(wide);
+    // stoerre boltavstand -> stagene naermere hjornejernene -> mindre fri avstand
+    const near = compute({ ...wide, s_bolt_x: 500, s_bolt_y: 500 });
+    expect(near.e_h).toBeLessThan(far.e_h);
+    expect(near.lapExtra).toBeLessThan(far.lapExtra);
+    expect(near.h_ef_req).toBeLessThan(far.h_ef_req);
+  });
+
+  it("tillegget gjelder KUN naar det finnes en skjoet", () => {
+    const v = { b: 800, h: 800 };
+    const ingen = compute({ ...DEFAULTS, ...v, anchor: "ingen" });
+    const plate = compute({ ...DEFAULTS, ...v, anchor: "plate" });
+    expect(ingen.lapExtra).toBeGreaterThan(0);
+    expect(plate.l_trans).toBe(plate.lbd_v);          // forankring, ikke omfaring
+    expect(plate.h_ef_req).toBeLessThan(ingen.h_ef_req);
+  });
+});
