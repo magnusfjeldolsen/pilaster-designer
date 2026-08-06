@@ -7,6 +7,7 @@
 // Det er b som maa vaere stoerre enn t_wall for at pilasteren skal stikke ut.
 
 import type { Inputs, Results } from "./calc";
+import { profileGeom } from "./profiles";
 
 export type Vec3 = [number, number, number];
 
@@ -126,8 +127,9 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   // ---- Stal: bunnplate + soylestubbe ----
   pushP("baseplate", "Bunnplate stalsoyle", "IfcPlate", "steel",
     { kind: "box", size: [v.a1p, v.a1p, tbp], center: [0, 0, tbp / 2] });
-  pushP("colstub", "Stalsoyle (stubbe)", "IfcMember", "steel",
-    { kind: "box", size: [v.b * 0.45, v.h * 0.45, 300], center: [0, 0, tbp + 150] });
+  // Profilet staar sentrisk paa bunnplata. Kun for visualisering/IFC.
+  pushP("colstub", `Stalsoyle ${v.profile}`, "IfcMember", "steel",
+    profileGeom(v.profile, v.profile_rot, 0, 0, tbp, tbp + 400));
 
   // ---- Gjengestag (4x) ----
   // Moensteret kommer fra compute() -> beregning og modell kan ikke komme ut av synk.

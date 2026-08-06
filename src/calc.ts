@@ -91,6 +91,8 @@ export interface Inputs {
   e_p: number;
   // bolter
   n_bolt: number; boltsize: string; grade: string;
+  // staalprofil paa bunnplata - kun visualisering/IFC, ingen kapasitetskontroll
+  profile: string; profile_rot: number;
   anchor: AnchorKind; a_anch: number; t_pl: number; fy_pl: number;
   // forankring uten endeforankring (NS-EN 1992-1-1 §8.4)
   anch_shape: "rett" | "krok"; K_anch: number; alpha4: number; p_tr: number;
@@ -122,7 +124,7 @@ export const DEFAULTS: Inputs = {
   a1p: 300, s_bolt_x: 200, s_bolt_y: 200, h_ef: 500, theta: 45,
   exp_class: "XD1/XS1", design_life: 50, dc_dev: 10,
   e_p: 75,
-  n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
+  n_bolt: 4, boltsize: "M30", grade: "8.8", profile: "HEA 200", profile_rot: 0, anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
   anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0, k_bd_bolt: 1.9,
   phi_b: 12, n_ben: 2, s_b: 100, phi_v: 25, n_v: 8,
   use_lug: false, w_lug: 150, h_emb: 80, t_grout: 30, k_lug: 2.0,

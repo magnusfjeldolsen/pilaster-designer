@@ -2,6 +2,7 @@
 // Ren data (ingen DOM), slik at den kan enhetstestes og rendres fritt.
 
 import { EXPOSURE_CLASSES, type Inputs, type Results } from "./calc";
+import { PROFILE_NAMES } from "./profiles";
 
 export type DocRow =
   | { kind: "calc"; sym: string; fml: string; sub: string; res: string; ref: string }
@@ -18,7 +19,7 @@ export const SYM: Record<string, string> = {
   b: "b", h: "h", t_wall: "t_wall", e_p: "e_p",
   anch_shape: "stangform", K_anch: "K", alpha4: "α_4", p_tr: "p", k_bd_bolt: "k_bd,stag",
   a1p: "a_1,plate", s_bolt_x: "s_bolt,⊥V", s_bolt_y: "s_bolt,∥V", h_ef: "h_ef", theta: "θ", c_nom: "c_nom",
-  n_bolt: "n_bolt", boltsize: "bolt", grade: "klasse", anchor: "endeforankr.",
+  n_bolt: "n_bolt", boltsize: "bolt", grade: "klasse", profile: "profil", profile_rot: "rot", anchor: "endeforankr.",
   a_anch: "a_1,ende", t_pl: "t_plate", fy_pl: "f_y,plate",
   phi_b: "φ_b", n_ben: "n_ben", s_b: "s_b", phi_v: "φ_v", n_v: "n_v",
   use_lug: "skjærnokk", w_lug: "w_lug", h_emb: "h_emb", t_grout: "t_grout", k_lug: "k_lug",
@@ -81,6 +82,13 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[]; emphasis?: boole
     M("anchor", "Endeforankring", "",
       "ingen (forankres ved heft, §8.4) · mutter (nøkkelvidde 1,5·d) · plate (a₁ × a₁)",
       "sel", ["ingen", "mutter", "plate"], "EC2 §6.7 / EC2 §8.4"),
+    M("profile", "Stålprofil", "",
+      "profil på bunnplata — HEA, SHS, RHS eller CHS. Kun visualisering og IFC; " +
+      "hverken profilet eller bunnplata inngår i kapasitetskontrollene",
+      "sel", PROFILE_NAMES, "EN 10365 / EN 10219 (nominelle mål)"),
+    M("profile_rot", "Profilrotasjon", "°",
+      "0 = profilets sterke akse langs skjærretningen, 90 = dreid en kvart omdreining",
+      "sel", ["0", "90"]),
     M("a_anch", "Platebredde a₁", "mm", "sidekant kvadratisk ankerplate — gjelder kun «plate»"),
     M("t_pl", "Platetykkelse", "mm", "platetykkelse (kun ankerplate)"),
     M("fy_pl", "f_y plate", "MPa", "flytegrense plate/stål (S355)") ] },

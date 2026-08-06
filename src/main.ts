@@ -82,10 +82,15 @@ function renderInputs() {
         for (const o of optsFor(f)) {
           const op = document.createElement("option");
           op.value = o; op.textContent = o;
-          if (v[f.k] === o) op.selected = true;
+          if (String(v[f.k]) === o) op.selected = true;
           sel.appendChild(op);
         }
-        sel.onchange = () => { (v as any)[f.k] = sel.value; refresh(); };
+        // behold typen: tallfelt som vises som nedtrekk skal fortsatt lagres som tall
+        const asNum = typeof v[f.k] === "number";
+        sel.onchange = () => {
+          (v as any)[f.k] = asNum ? parseFloat(sel.value) || 0 : sel.value;
+          refresh();
+        };
         ctrl = sel;
       } else if (f.kind === "bool") {
         const cb = document.createElement("input");

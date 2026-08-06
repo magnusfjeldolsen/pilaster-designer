@@ -4,6 +4,7 @@ import {
   INPUT_GROUPS, LEVERS, SYM, FML, REF, buildReport, checkRows, failingLevers, reportStatus,
 } from "./report";
 import { drawPlan, drawSection, MECHS } from "./sketch";
+import { DEFAULT_PROFILE, PROFILES, PROFILE_NAMES, profileGeom } from "./profiles";
 
 const allMeta = INPUT_GROUPS.flatMap((g) => g.items);
 
@@ -242,5 +243,71 @@ describe("kontroller kan settes til side av prosjekterende", () => {
     const st = reportStatus(groups, new Set(["finnes_ikke"]));
     expect(st.ignored).toEqual([]);
     expect(st.ok).toBe(reportStatus(groups, new Set()).ok);
+  });
+});
+
+describe("staalprofil paa bunnplata (kun visualisering)", () => {
+  it("katalogen dekker HEA, SHS, RHS og CHS", () => {
+    const fams = new Set(PROFILE_NAMES.map((n) => PROFILES[n].fam));
+    expect([...fams].sort()).toEqual(["CHS", "HEA", "RHS", "SHS"]);
+    expect(PROFILE_NAMES.length).toBeGreaterThan(70);
+    expect(PROFILES[DEFAULT_PROFILE]).toBeTruthy();
+  });
+
+  it("HEA gir en I-kontur, ikke en kasse", () => {
+    const g = profileGeom("HEA 200", 0, 0, 0, 0, 400);
+    expect(g.kind).toBe("prism");
+    if (g.kind === "prism") {
+      expect(g.profile.length).toBe(12);
+      const xs = g.profile.map((p) => p[0]), ys = g.profile.map((p) => p[1]);
+      expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(200, 6);  // b
+      expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(190, 6);  // h
+      // livet er smalere enn flensene -> ekte I
+      expect(xs.some((x) => Math.abs(x) < 10)).toBe(true);
+    }
+  });
+
+  it("rotasjon 90° bytter om profilets akser", () => {
+    const ext = (g: ReturnType<typeof profileGeom>) => {
+      if (g.kind !== "prism") throw new Error("forventet prisme");
+      const xs = g.profile.map((p) => p[0]), ys = g.profile.map((p) => p[1]);
+      return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+    };
+    const [x0, y0] = ext(profileGeom("HEA 300", 0, 0, 0, 0, 400));
+    const [x9, y9] = ext(profileGeom("HEA 300", 90, 0, 0, 0, 400));
+    expect(x9).toBeCloseTo(y0, 6);
+    expect(y9).toBeCloseTo(x0, 6);
+  });
+
+  it("RHS snus ogsaa, mens SHS er symmetrisk", () => {
+    const box = (n: string, r: number) => {
+      const g = profileGeom(n, r, 0, 0, 0, 400);
+      if (g.kind !== "box") throw new Error("forventet kasse");
+      return [g.size[0], g.size[1]];
+    };
+    expect(box("RHS 200x100", 0)).toEqual([100, 200]);
+    expect(box("RHS 200x100", 90)).toEqual([200, 100]);
+    expect(box("SHS 150x150", 0)).toEqual(box("SHS 150x150", 90));
+  });
+
+  it("CHS blir en sylinder med riktig radius", () => {
+    const g = profileGeom("CHS 219.1", 0, 0, 0, 25, 425);
+    expect(g.kind).toBe("sweep");
+    if (g.kind === "sweep") {
+      expect(g.radius).toBeCloseTo(219.1 / 2, 6);
+      expect(g.path[0][2]).toBe(25);
+      expect(g.path[1][2]).toBe(425);
+    }
+  });
+
+  it("ukjent profilnavn faller tilbake paa default i stedet for aa kaste", () => {
+    expect(() => profileGeom("finnes ikke", 0, 0, 0, 0, 400)).not.toThrow();
+  });
+
+  it("profilet paavirker ikke beregningen", () => {
+    const a = compute({ ...DEFAULTS, profile: "HEA 1000" });
+    const b = compute({ ...DEFAULTS, profile: "CHS 21.3", profile_rot: 90 });
+    expect(a.N_re).toBeCloseTo(b.N_re, 9);
+    expect(a.allOk).toBe(b.allOk);
   });
 });
