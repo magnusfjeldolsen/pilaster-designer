@@ -5,7 +5,10 @@ import { EXPOSURE_CLASSES, type Inputs, type Results } from "./calc";
 
 export type DocRow =
   | { kind: "calc"; sym: string; fml: string; sub: string; res: string; ref: string }
-  | { kind: "check"; sym: string; expr: string; ok: boolean; ref: string };
+  // id er STABIL og brukes til LEVERS, til «ignorer»-huker og i lagret tilstand.
+  // sym er ledeteksten og kan endres fritt uten aa brekke noe.
+  | { kind: "check"; id: string; sym: string; expr: string; ok: boolean; ref: string;
+      u?: number };
 
 export interface DocGroup { title: string; rows: DocRow[] }
 
@@ -122,34 +125,64 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
 export type Lever = { k: keyof Inputs; dir: "opp" | "ned" };
 
 export const LEVERS: Record<string, Lever[]> = {
-  "Skjærnokk": [{ k: "w_lug", dir: "opp" }, { k: "h_emb", dir: "opp" }, { k: "fck", dir: "opp" }],
-  "Bøyleavstand": [{ k: "s_b", dir: "ned" }],
-  "Bøylediameter ≤ 16 mm": [{ k: "phi_b", dir: "ned" }],
-  "Flytegrense tilleggsarmering": [{ k: "fyk", dir: "ned" }],
-  "Stagmønster i tverrsnittet": [
+  "lug": [{ k: "w_lug", dir: "opp" }, { k: "h_emb", dir: "opp" }, { k: "fck", dir: "opp" }],
+  "s_b": [{ k: "s_b", dir: "ned" }],
+  "phi_b_max": [{ k: "phi_b", dir: "ned" }],
+  "fyk_max": [{ k: "fyk", dir: "ned" }],
+  "bolt_fit": [
     { k: "b", dir: "opp" }, { k: "h", dir: "opp" }, { k: "s_bolt", dir: "ned" },
     { k: "n_bolt", dir: "ned" }],
-  "Stål (bøyler)": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "n_ben", dir: "opp" }],
-  "Forankring bøyle": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "fck", dir: "opp" }],
-  "Heftforankring stag": [
+  "stal": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "n_ben", dir: "opp" }],
+  "ank": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "fck", dir: "opp" }],
+  "bond": [
     { k: "h_ef", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "anchor", dir: "opp" }],
-  "α-produkt": [{ k: "s_b", dir: "ned" }, { k: "phi_b", dir: "opp" }],
-  "Endetrykk": [{ k: "a_anch", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
-  "Platetykkelse": [{ k: "t_pl", dir: "opp" }, { k: "fy_pl", dir: "opp" }],
-  "Aksial (oppstikk)": [{ k: "n_v", dir: "opp" }, { k: "phi_v", dir: "opp" }],
-  "Bolt": [{ k: "boltsize", dir: "opp" }, { k: "grade", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
-  "Innstøping": [
+  "alpha_prod": [{ k: "s_b", dir: "ned" }, { k: "phi_b", dir: "opp" }],
+  "bear": [{ k: "a_anch", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
+  "plate": [{ k: "t_pl", dir: "opp" }, { k: "fy_pl", dir: "opp" }],
+  "ax": [{ k: "n_v", dir: "opp" }, { k: "phi_v", dir: "opp" }],
+  "bolt": [{ k: "boltsize", dir: "opp" }, { k: "grade", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
+  "emb": [
     { k: "h_ef", dir: "opp" }, { k: "theta", dir: "opp" }, { k: "phi_v", dir: "ned" },
     { k: "b", dir: "ned" }, { k: "h", dir: "ned" }],
 };
 
+/** Alle kontrollrader i rapporten, i rekkefoelge. */
+export function checkRows(groups: DocGroup[]) {
+  return groups.flatMap((g) => g.rows).filter((r) => r.kind === "check") as
+    Extract<DocRow, { kind: "check" }>[];
+}
+
+export interface Status {
+  ok: boolean;              // gaar alt opp naar ignorerte kontroller holdes utenfor?
+  okStrict: boolean;        // ... og hvis ingenting ignoreres?
+  failing: string[];        // id-er som ryker og IKKE er ignorert
+  ignored: string[];        // id-er som er huket bort (kun de som finnes)
+  ignoredFailing: string[]; // huket bort OG ville rykt - det er disse som er risikable
+}
+
+/** Samlet status naar prosjekterende har valgt bort enkelte kontroller.
+ *  Beregningen i calc.ts forblir ren; det er kun rapporten/UI som kjenner valget. */
+export function reportStatus(groups: DocGroup[], ignored: Set<string>): Status {
+  const rows = checkRows(groups);
+  const failing = rows.filter((r) => !r.ok && !ignored.has(r.id)).map((r) => r.id);
+  const ign = rows.filter((r) => ignored.has(r.id)).map((r) => r.id);
+  return {
+    ok: failing.length === 0,
+    okStrict: rows.every((r) => r.ok),
+    failing, ignored: ign,
+    ignoredFailing: rows.filter((r) => !r.ok && ignored.has(r.id)).map((r) => r.id),
+  };
+}
+
 /** Inndata som ville hjulpet paa kontrollene som ikke gaar opp. */
-export function failingLevers(groups: DocGroup[]): Map<keyof Inputs, Lever["dir"]> {
+export function failingLevers(
+  groups: DocGroup[], ignored: Set<string> = new Set(),
+): Map<keyof Inputs, Lever["dir"]> {
   const out = new Map<keyof Inputs, Lever["dir"]>();
   for (const g of groups)
     for (const r of g.rows)
-      if (r.kind === "check" && !r.ok)
-        for (const lv of LEVERS[r.sym] ?? []) out.set(lv.k, lv.dir);
+      if (r.kind === "check" && !r.ok && !ignored.has(r.id))
+        for (const lv of LEVERS[r.id] ?? []) out.set(lv.k, lv.dir);
   return out;
 }
 
@@ -226,8 +259,8 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   const G = (title: string) => groups.push((cur = { title, rows: [] }));
   const D = (sym: string, sub: string, res: string) =>
     cur.rows.push({ kind: "calc", sym, fml: FML[sym] ?? "", sub, res, ref: REF[sym] ?? "" });
-  const C = (sym: string, expr: string, ok: boolean, ref: string) =>
-    cur.rows.push({ kind: "check", sym, expr, ok, ref });
+  const C = (id: string, sym: string, expr: string, ok: boolean, ref: string, u?: number) =>
+    cur.rows.push({ kind: "check", id, sym, expr, ok, ref, u });
 
   G("Betongens fasthetsegenskaper — avledet av f_ck (NS-EN 1992-1-1 tab. 3.1)");
   D("f_cm", `${g.fck}+8`, `${f1(R.conc.fcm)} MPa`);
@@ -340,38 +373,38 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
 
   G("Kontroller");
   if (R.use_lug)
-    C("Skjærnokk", `V_Ed ${g.V} ≤ V_Rd,lug ${f1(R.V_Rd_lug)} kN  (u=${f2(R.u_lug)})`,
-      R.u_lug <= 1, "EC2 §6.7");
-  C("Bøyleavstand", `valgt s_b ${f0(g.s_b)} ≤ s_b,maks ${f0(R.s_b_max)} mm`,
-    g.s_b <= R.s_b_max, "dim.");
-  C("Bøylediameter ≤ 16 mm", `φ_b ${f0(g.phi_b)} ≤ 16 mm (krav til tilleggsarmering)`,
-    g.phi_b <= 16, "EC2-4 §7.2.1");
-  C("Flytegrense tilleggsarmering", `f_yk ${f0(g.fyk)} ≤ 500 MPa`, g.fyk <= 500, "EC2-4 §7.2.1");
-  C("Stagmønster i tverrsnittet",
+    C("lug", "Skjærnokk", `V_Ed ${g.V} ≤ V_Rd,lug ${f1(R.V_Rd_lug)} kN  (u=${f2(R.u_lug)})`,
+      R.u_lug <= 1, "EC2 §6.7", R.u_lug);
+  C("s_b", "Bøyleavstand", `valgt s_b ${f0(g.s_b)} ≤ s_b,maks ${f0(R.s_b_max)} mm`,
+    g.s_b <= R.s_b_max, "dim.", g.s_b / R.s_b_max);
+  C("phi_b_max", "Bøylediameter ≤ 16 mm", `φ_b ${f0(g.phi_b)} ≤ 16 mm (krav til tilleggsarmering)`,
+    g.phi_b <= 16, "EC2-4 §7.2.1", g.phi_b / 16);
+  C("fyk_max", "Flytegrense tilleggsarmering", `f_yk ${f0(g.fyk)} ≤ 500 MPa`, g.fyk <= 500, "EC2-4 §7.2.1", g.fyk / 500);
+  C("bolt_fit", "Stagmønster i tverrsnittet",
     `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(R.c_nom)} mm` +
-    ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt)})`, R.boltFits, "geometri");
-  C("Stål (bøyler)", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,re ${f1(R.N_Rd_re)} kN  (u=${f2(R.u_stal)})`,
-    R.u_stal <= 1, "EC2-4 §7.2.1.9");
-  C("Forankring bøyle", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,a ${f1(R.N_Rd_a)} kN  (u=${f2(R.u_ank)})`,
-    R.u_ank <= 1, "EC2-4 §7.2.1");
+    ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt)})`, R.boltFits, "geometri", R.c_bolt > 0 ? R.c_nom / R.c_bolt : 9);
+  C("stal", "Stål (bøyler)", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,re ${f1(R.N_Rd_re)} kN  (u=${f2(R.u_stal)})`,
+    R.u_stal <= 1, "EC2-4 §7.2.1.9", R.u_stal);
+  C("ank", "Forankring bøyle", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,a ${f1(R.N_Rd_a)} kN  (u=${f2(R.u_ank)})`,
+    R.u_ank <= 1, "EC2-4 §7.2.1", R.u_ank);
   if (R.noAnchor) {
-    C("Heftforankring stag",
+    C("bond", "Heftforankring stag",
       `l_bd ${f0(R.bond.lbd)} ≤ h_ef−c ${f0(R.l_avail)} mm  (u=${f2(R.u_bond)})`,
-      R.u_bond <= 1, "EC2 §8.4.4");
-    C("α-produkt", `α₂·α₃·α₅ = ${f3(R.bond.alphaProd)} ≥ 0,7`, R.bond.prodOk, "EC2 §8.4.4");
+      R.u_bond <= 1, "EC2 §8.4.4", R.u_bond);
+    C("alpha_prod", "α-produkt", `α₂·α₃·α₅ = ${f3(R.bond.alphaProd)} ≥ 0,7`, R.bond.prodOk, "EC2 §8.4.4", 0.7 / R.bond.alphaProd);
   } else {
-    C("Endetrykk", `N_Ed,t/n ${f1(R.F_rod)} ≤ F_Rdu ${f1(R.F_Rdu)} kN  (u=${f2(R.u_bear)})`,
-      R.u_bear <= 1, "EC2 §6.7");
+    C("bear", "Endetrykk", `N_Ed,t/n ${f1(R.F_rod)} ≤ F_Rdu ${f1(R.F_Rdu)} kN  (u=${f2(R.u_bear)})`,
+      R.u_bear <= 1, "EC2 §6.7", R.u_bear);
   }
   if (R.isPlate)
-    C("Platetykkelse", `t_nødv ${f0(R.t_pl_req)} ≤ t_plate ${g.t_pl} mm  (u=${f2(R.u_plate)})`,
-      R.u_plate <= 1, "EN 1993-1-8");
-  C("Aksial (oppstikk)", `N_Ed,t ${g.N_t} ≤ N_Rd,v ${f0(R.N_Rd_v)} kN  (u=${f2(R.u_ax)})`,
-    R.u_ax <= 1, "EC2 §8.4");
-  C("Bolt", `N_Ed,t ${g.N_t} ≤ N_Rd,s ${f0(R.N_Rd_s)} kN  (u=${f2(R.u_bolt)})`,
-    R.u_bolt <= 1, "EN 1993-1-8");
-  C("Innstøping", `h_ef,nødv ${f0(R.h_ef_req)} ≤ h_ef ${g.h_ef} mm  (u=${f2(R.u_emb)})`,
-    R.u_emb <= 1, "EC2 §8.7/STM");
+    C("plate", "Platetykkelse", `t_nødv ${f0(R.t_pl_req)} ≤ t_plate ${g.t_pl} mm  (u=${f2(R.u_plate)})`,
+      R.u_plate <= 1, "EN 1993-1-8", R.u_plate);
+  C("ax", "Aksial (oppstikk)", `N_Ed,t ${g.N_t} ≤ N_Rd,v ${f0(R.N_Rd_v)} kN  (u=${f2(R.u_ax)})`,
+    R.u_ax <= 1, "EC2 §8.4", R.u_ax);
+  C("bolt", "Bolt", `N_Ed,t ${g.N_t} ≤ N_Rd,s ${f0(R.N_Rd_s)} kN  (u=${f2(R.u_bolt)})`,
+    R.u_bolt <= 1, "EN 1993-1-8", R.u_bolt);
+  C("emb", "Innstøping", `h_ef,nødv ${f0(R.h_ef_req)} ≤ h_ef ${g.h_ef} mm  (u=${f2(R.u_emb)})`,
+    R.u_emb <= 1, "EC2 §8.7/STM", R.u_emb);
 
   return groups;
 }

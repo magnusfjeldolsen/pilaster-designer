@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { compute, coverFromExposure, DEFAULTS, type Inputs } from "./calc";
-import { INPUT_GROUPS, LEVERS, SYM, FML, REF, buildReport, failingLevers } from "./report";
+import {
+  INPUT_GROUPS, LEVERS, SYM, FML, REF, buildReport, checkRows, failingLevers, reportStatus,
+} from "./report";
 import { drawPlan, drawSection, MECHS } from "./sketch";
 
 const allMeta = INPUT_GROUPS.flatMap((g) => g.items);
@@ -146,7 +148,7 @@ describe("hjelpetekster og hint", () => {
     const names = new Set<string>();
     for (const v of [DEFAULTS, { ...DEFAULTS, use_lug: true }, { ...DEFAULTS, anchor: "ingen" as const }])
       for (const g of buildReport(v, compute(v)))
-        for (const r of g.rows) if (r.kind === "check") names.add(r.sym);
+        for (const r of g.rows) if (r.kind === "check") names.add(r.id);
     const orphan = Object.keys(LEVERS).filter((k) => !names.has(k));
     expect(orphan, "LEVERS peker paa kontroller som ikke finnes").toEqual([]);
     void R;
@@ -193,5 +195,52 @@ describe("overdekning fra eksponeringsklasse (EC2 §4.4.1)", () => {
   it("XC1 gir mye tynnere overdekning enn XS3", () => {
     expect(coverFromExposure("XC1", 35, 50, 12, 10).cNom)
       .toBeLessThan(coverFromExposure("XD3/XS3", 35, 50, 12, 10).cNom);
+  });
+});
+
+describe("kontroller kan settes til side av prosjekterende", () => {
+  const groups = buildReport(DEFAULTS, compute(DEFAULTS));
+
+  it("hver kontroll har en stabil id og de er unike", () => {
+    const ids = checkRows(groups).map((r) => r.id);
+    expect(ids.length).toBeGreaterThan(5);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it("kontroller med utnyttelsesgrad rapporterer u", () => {
+    const withU = checkRows(groups).filter((r) => typeof r.u === "number");
+    expect(withU.length).toBeGreaterThan(5);
+    const emb = checkRows(groups).find((r) => r.id === "emb")!;
+    expect(emb.u).toBeCloseTo(compute(DEFAULTS).u_emb, 9);
+    // u > 1 skal alltid bety at kontrollen ryker
+    for (const r of withU) if (r.u! > 1.0001) expect(r.ok).toBe(false);
+  });
+
+  it("status uten ignorering er lik calc sin allOk", () => {
+    const st = reportStatus(groups, new Set());
+    expect(st.okStrict).toBe(compute(DEFAULTS).allOk);
+    expect(st.ok).toBe(st.okStrict);
+  });
+
+  it("ignorering fjerner kontrollen fra samlet status", () => {
+    const before = reportStatus(groups, new Set());
+    expect(before.ok).toBe(false);
+    const st = reportStatus(groups, new Set(before.failing));
+    expect(st.ok).toBe(true);
+    expect(st.okStrict).toBe(false);            // strengt sett gaar det fortsatt ikke opp
+    expect(st.ignoredFailing.sort()).toEqual([...before.failing].sort());
+  });
+
+  it("ignorerte kontroller gir ikke lenger hint paa inndata", () => {
+    const all = new Set(checkRows(groups).map((r) => r.id));
+    expect(failingLevers(groups).size).toBeGreaterThan(0);
+    expect(failingLevers(groups, all).size).toBe(0);
+  });
+
+  it("ukjente id-er i ignoreringslista paavirker ingenting", () => {
+    const st = reportStatus(groups, new Set(["finnes_ikke"]));
+    expect(st.ignored).toEqual([]);
+    expect(st.ok).toBe(reportStatus(groups, new Set()).ok);
   });
 });

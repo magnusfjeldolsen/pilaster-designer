@@ -3,7 +3,7 @@ import { buildModel, type ElementSpec } from "./model";
 import { Viewer } from "./viewer";
 import { exportIFC } from "./ifc";
 import {
-  INPUT_GROUPS, SYM, buildReport, failingLevers, ASSUMPTIONS_HTML,
+  INPUT_GROUPS, SYM, buildReport, checkRows, failingLevers, reportStatus, ASSUMPTIONS_HTML,
   type InputMeta, type DocGroup,
 } from "./report";
 import { drawPlan, drawSection, MECHS, MECH_TEXT, type Mech } from "./sketch";
@@ -24,6 +24,19 @@ let R: Results = compute(v);
 const shown = new Set(["concrete", "rebar-stirrup", "rebar-bar", "steel", "bolt", "lug"]);
 let tab: "3d" | "2d" | "doc" = "3d";
 let mech: Mech = "shear";
+
+/* ---- prosjekterendes valg som lagres lokalt (ikke del av beregningen) ---- */
+const LS_IGNORE = "pilaster.ignorerteKontroller", LS_NOTE = "pilaster.kommentar";
+const load = (k: string, d = "") => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* privat modus */ } };
+const ignored = new Set<string>(load(LS_IGNORE).split(",").filter(Boolean));
+let notes = load(LS_NOTE);
+
+/** Fargekode: <90 % groenn, 90-100 % oransje, >100 % roed. */
+function uClass(u: number): "g" | "o" | "r" {
+  return u > 1.0001 ? "r" : u >= 0.9 ? "o" : "g";
+}
+const pct = (u: number) => `${(u * 100).toFixed(0)} %`;
 
 /* ---------------- inputpanel (drevet av INPUT_GROUPS) ---------------- */
 function optsFor(f: InputMeta): string[] {
@@ -128,6 +141,25 @@ function renderResults() {
     rows.map(([a, b]) => `<div class="r"><span>${a}</span><span>${b}</span></div>`).join("");
 }
 
+/** Utnyttelsesgrader alltid synlige i 3D-visningen, sortert med verste foerst. */
+function renderUtil() {
+  const rows = checkRows(buildReport(v, R))
+    .filter((r) => typeof r.u === "number")
+    .sort((a, b) => (b.u ?? 0) - (a.u ?? 0));
+  const st = reportStatus(buildReport(v, R), ignored);
+  const body = rows.map((r) => {
+    const ign = ignored.has(r.id);
+    const cls = ign ? "ign" : uClass(r.u!);
+    return `<div class="ur ${cls}" title="${esc(r.expr)}">` +
+      `<span class="un">${esc(r.sym)}</span>` +
+      `<span class="uv">${ign ? "ignorert" : pct(r.u!)}</span></div>`;
+  }).join("");
+  $("#util").innerHTML =
+    `<div class="uhead ${st.ok ? "g" : "r"}">${st.ok ? "OK" : "IKKE OK"}` +
+    (st.ignored.length ? `<span class="uign">${st.ignored.length} ignorert</span>` : "") +
+    `</div>${body}`;
+}
+
 /* ---------------- 2D ---------------- */
 function renderMechbar() {
   $("#mechbar").innerHTML = MECHS.map((m) =>
@@ -177,11 +209,20 @@ function docTable(groups: DocGroup[]): string {
           `<tr><td class="dsym">${pretty(r.sym)}</td><td class="dfml">${esc(r.fml)}</td>` +
           `<td class="dsub">${esc(r.sub)}</td><td class="dres">${esc(r.res)}</td>` +
           `<td class="dref">${esc(r.ref)}</td></tr>`);
-      else
+      else {
+        const ign = ignored.has(r.id);
+        const badge = ign
+          ? `<span class="badge ign">– ignorert</span>`
+          : `<span class="badge ${r.ok ? "ok" : "no"}">${r.ok ? "✓ OK" : "✕ IKKE OK"}</span>`;
         rows.push(
-          `<tr><td class="dsym">${esc(r.sym)}</td><td class="dfml" colspan="2">${esc(r.expr)}</td>` +
-          `<td class="dres"><span class="badge ${r.ok ? "ok" : "no"}">${r.ok ? "✓ OK" : "✕ IKKE OK"}</span></td>` +
+          `<tr class="chk${ign ? " ignrow" : ""}"><td class="dsym">` +
+          `<label class="ig"><input type="checkbox" data-chk="${esc(r.id)}"${ign ? " checked" : ""}` +
+          ` title="Hak av for å se bort fra denne kontrollen">` +
+          `<span>${esc(r.sym)}</span></label></td>` +
+          `<td class="dfml" colspan="2">${esc(r.expr)}</td>` +
+          `<td class="dres">${badge}</td>` +
           `<td class="dref">${esc(r.ref)}</td></tr>`);
+      }
     }
   }
   return `<table class="t"><thead><tr><th>Symbol</th><th>Formel</th><th>Innsatte verdier</th>` +
@@ -189,18 +230,49 @@ function docTable(groups: DocGroup[]): string {
 }
 function renderDoc() {
   const dato = new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "long", day: "numeric" });
+  const groups = buildReport(v, R);
+  const st = reportStatus(groups, ignored);
+  const names = new Map(checkRows(groups).map((r) => [r.id, r.sym]));
+  const warn = st.ignoredFailing.length
+    ? `<div class="warn"><b>${st.ignoredFailing.length} kontroll(er) som ikke går opp er ` +
+      `bevisst sett bort fra:</b> ${st.ignoredFailing.map((i) => esc(names.get(i) ?? i)).join(", ")}. ` +
+      `Begrunnelsen skal framgå av kommentarfeltet nedenfor.</div>`
+    : "";
   $("#doc").innerHTML =
     `<h1>Beregningsrapport — innfesting stålsøyle i pilaster</h1>` +
     `<div class="docmeta"><span>NS-EN 1992-4 · NS-EN 1992-1-1 · NS-EN 1993-1-8</span>` +
     `<span>Dato: ${esc(dato)}</span>` +
-    `<span>Samlet status: <b class="${R.allOk ? "ok" : "bad"}">${R.allOk ? "OK" : "IKKE OK"}</b></span></div>` +
+    `<span>Samlet status: <b class="${st.ok ? "ok" : "bad"}">${st.ok ? "OK" : "IKKE OK"}</b>` +
+    (st.ignored.length ? ` <span class="dref">(${st.ignored.length} kontroll(er) ignorert)</span>` : "") +
+    `</span></div>` + warn +
     `<div class="docactions"><button class="pbtn primary" id="btnPrint">Skriv ut / lagre som PDF</button></div>` +
     `<h2>Geometri</h2><div class="figs">` +
     `<div class="fig">${drawPlan(v, R, mech)}</div><div class="fig">${drawSection(v, R, mech)}</div></div>` +
     `<h2>Forutsetninger og inndata</h2>${inputTable()}` +
-    `<h2>Beregning — formel, innsatte verdier, referanse</h2>${docTable(buildReport(v, R))}` +
+    `<h2>Beregning — formel, innsatte verdier, referanse</h2>${docTable(groups)}` +
+    `<h2>Kommentarer fra prosjekterende</h2>` +
+    `<textarea id="notes" class="notes" rows="6" placeholder="Grunnlag, forutsetninger og ` +
+    `begrunnelse for eventuelle kontroller det er sett bort fra …">${esc(notes)}</textarea>` +
+    `<div class="notesprint"></div>` +
     `<h2>Grunnlag</h2>${ASSUMPTIONS_HTML}`;
   ($("#btnPrint") as HTMLButtonElement).onclick = () => window.print();
+
+  const ta = $("#notes") as HTMLTextAreaElement;
+  const print = $(".notesprint") as HTMLElement;
+  const syncNotes = () => {
+    print.textContent = notes.trim() || "(ingen kommentarer)";
+  };
+  ta.oninput = () => { notes = ta.value; save(LS_NOTE, notes); syncNotes(); };
+  syncNotes();
+
+  // haker for aa se bort fra enkeltkontroller
+  $("#doc").querySelectorAll<HTMLInputElement>("input[data-chk]").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.chk!;
+      cb.checked ? ignored.add(id) : ignored.delete(id);
+      save(LS_IGNORE, [...ignored].join(","));
+      renderDoc(); renderUtil(); renderHints();
+    }));
 }
 
 /* ---------------- faner ---------------- */
@@ -224,7 +296,7 @@ function renderActive() {
 
 /** Marker inndata som ville hjulpet paa kontrollene som ikke gaar opp. */
 function renderHints() {
-  const levers = failingLevers(buildReport(v, R));
+  const levers = failingLevers(buildReport(v, R), ignored);
   for (const row of document.querySelectorAll<HTMLElement>("#panel .row")) {
     const k = row.dataset.k as keyof Inputs | undefined;
     const dir = k ? levers.get(k) : undefined;
@@ -247,6 +319,7 @@ function refresh() {
   viewer.setModel(els, (m) => shown.has(m));
   renderResults();
   renderHints();
+  renderUtil();
   renderActive();
 }
 
