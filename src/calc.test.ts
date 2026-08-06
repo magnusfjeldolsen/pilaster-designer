@@ -34,15 +34,21 @@ describe("compute() – geometri og fagverk", () => {
     expect(R.h_sone).toBe(450);
     expect(R.n_lag).toBe(5);
   });
-  it("skjaertie N_re,V = V*(1+e_s/z)", () => {
-    expect(R.N_reV).toBeCloseTo(224.1, 0);
+  it("e_s avledes av boylegruppa: c+phi_b/2 + s_b*(n_lag-1)/2", () => {
+    expect(R.e_s).toBeCloseTo(50 + 6 + 100 * (5 - 1) / 2, 6);   // = 256
+    expect(R.e_s_eff).toBe(R.e_s);                              // uten nokk
   });
-  it("spaltestrekk fra endeforankring", () => {
-    expect(R.T_nut).toBeCloseTo(66.7, 0);
+  it("skjaertie N_re,V = V*(1+e_s/z) med avledet e_s", () => {
+    expect(R.N_reV).toBeCloseTo(DEFAULTS.V * (1 + R.e_s / R.z), 6);
+    expect(R.N_reV).toBeCloseTo(276.4, 0);   // var 224,1 med e_s = 150 lagt inn
+  });
+  it("spaltestrekk fra endeforankring med avledet e_h", () => {
+    expect(R.T_nut).toBeCloseTo(0.25 * (1 - R.a_eff / R.a_spread_n) * DEFAULTS.N_t, 6);
+    expect(R.T_nut).toBeCloseTo(37.5, 0);    // var 66,7 med e_h = 120 lagt inn
   });
   it("dimensjonerende boylestrekk (LT A styrer)", () => {
     expect(R.govA).toBe(true);
-    expect(R.N_re).toBeCloseTo(290.8, 0);
+    expect(R.N_re).toBeCloseTo(314.0, 0);    // var 290,8
   });
 });
 
@@ -86,7 +92,7 @@ describe("compute() – endeforankring: ingen / mutter / plate", () => {
     const R = compute(DEFAULTS);
     expect(R.isPlate).toBe(true);
     expect(R.a_eff).toBeCloseTo(DEFAULTS.a_anch, 6);
-    expect(R.T_nut).toBeCloseTo(66.7, 0);                        // uendret fra foer
+    expect(R.T_nut).toBeCloseTo(37.5, 0);                        // med avledet e_h
   });
 
   it("mindre lastflate (mutter) gir stoerre spaltestrekk enn plate", () => {
@@ -210,5 +216,24 @@ describe("betongfastheter avledet av f_ck (EC2 tab. 3.1)", () => {
     expect(R45.conc.fctk005).toBeGreaterThan(R35.conc.fctk005);
     expect(R45.fctd).toBeGreaterThan(R35.fctd);   // hoyere klasse -> hoyere heft
     expect(R45.fbd).toBeGreaterThan(R35.fbd);
+  });
+});
+
+describe("stagmoensteret maa faa plass i tverrsnittet", () => {
+  it("default (4 stag) har god overdekning", () => {
+    const R = compute(DEFAULTS);
+    expect(R.c_bolt).toBeCloseTo(DEFAULTS.b / 2 - DEFAULTS.s_bolt / 2 - R.d_bolt / 2, 6);
+    expect(R.boltFits).toBe(true);
+  });
+  it("6 stag med samme s_bolt sprenger tverrsnittet -> ikke OK", () => {
+    const R = compute({ ...DEFAULTS, n_bolt: 6 });
+    expect(R.boltXY.length).toBe(6);
+    expect(R.c_bolt).toBeLessThan(DEFAULTS.c_nom);   // stagene naar betongflaten
+    expect(R.boltFits).toBe(false);
+    expect(R.allOk).toBe(false);                     // slaar ut i totalvurderingen
+  });
+  it("stoerre tverrsnitt eller tettere moenster gjoer det OK igjen", () => {
+    expect(compute({ ...DEFAULTS, n_bolt: 6, b: 700, h: 700 }).boltFits).toBe(true);
+    expect(compute({ ...DEFAULTS, n_bolt: 6, s_bolt: 110 }).boltFits).toBe(true);
   });
 });

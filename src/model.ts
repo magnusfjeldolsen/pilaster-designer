@@ -85,9 +85,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   const Lw = Math.max(3 * v.h, v.h + 2 * v.t_wall + 400); // ringmur-lengde langs Y
   const tFoot = 400;
   const tbp = 25;                              // bunnplatetykkelse
-  const sx = v.s_bolt / 2, sy = v.s_bolt / 2;  // boltmonster (kvadrat)
   const cS = v.c_nom + v.phi_b / 2;            // boyle-senterlinje innrykk
-  const cV = v.c_nom + v.phi_b + v.phi_v / 2;  // oppstikk-senterlinje innrykk
 
   const push = (
     id: string, name: string, ifcClass: ElementSpec["ifcClass"],
@@ -132,8 +130,9 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
     { kind: "box", size: [v.b * 0.45, v.h * 0.45, 300], center: [0, 0, tbp + 150] });
 
   // ---- Gjengestag (4x) ----
+  // Moensteret kommer fra compute() -> beregning og modell kan ikke komme ut av synk.
   const rodTop = tbp + 40, rodBot = -v.h_ef;
-  const boltXY: Vec3[] = [[sx, sy, 0], [-sx, sy, 0], [sx, -sy, 0], [-sx, -sy, 0]];
+  const boltXY = R.boltXY;
   boltXY.forEach(([x, y], i) =>
     pushP(`rod${i}`, `Gjengestag ${v.boltsize} #${i + 1}`, "IfcMechanicalFastener", "bolt",
       { kind: "sweep", radius: R.d_bolt / 2, path: [[x, y, rodTop], [x, y, rodBot]] }));
@@ -153,12 +152,8 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
     }
   });
 
-  // ---- Oppstikkende jern 8xO25 (hjorner + midt) ----
-  const bxr = hx - cV, byr = hy - cV;
-  const barXY = ([
-    [bxr, byr, 0], [-bxr, byr, 0], [bxr, -byr, 0], [-bxr, -byr, 0],
-    [bxr, 0, 0], [-bxr, 0, 0], [0, byr, 0], [0, -byr, 0],
-  ] as Vec3[]).slice(0, v.n_v);
+  // ---- Oppstikkende jern (hjorner + fordelt langs sidene) ----
+  const barXY = R.barXY;
   const barTop = -(v.c_nom + v.phi_b + v.phi_v / 2), barBot = -v.H_pil - 150;
   barXY.forEach(([x, y], i) =>
     pushP(`bar${i}`, `Oppstikk O${v.phi_v} #${i + 1}`, "IfcReinforcingBar", "bar",

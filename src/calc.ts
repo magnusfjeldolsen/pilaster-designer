@@ -35,7 +35,9 @@ export const NUT_ACROSS_FLATS = 1.5;
 export interface Inputs {
   // geometri [mm / grader]
   H_pil: number; H_wall: number; b: number; h: number; t_wall: number;
-  a1p: number; s_bolt: number; e_h: number; h_ef: number; e_s: number;
+  // e_h (stag -> naermeste oppstikk) og e_s (V -> boyletyngdepunkt) legges IKKE inn:
+  // begge foelger entydig av tverrsnittet, boltmoensteret og boylelagene.
+  a1p: number; s_bolt: number; h_ef: number;
   theta: number; c_nom: number;
   // Fri eksentrisitet: avstand fra ringmurens senterlinje til pilasterens senterlinje.
   // e_p = 0 gir sentrisk pilaster; pilasteren trenger ikke flukte med noen murflate.
@@ -70,7 +72,7 @@ export const GRADES = ["4.6", "5.6", "5.8", "6.8", "8.8", "10.9", "12.9"];
 
 export const DEFAULTS: Inputs = {
   H_pil: 900, H_wall: 900, b: 400, h: 400, t_wall: 250,
-  a1p: 300, s_bolt: 200, e_h: 120, h_ef: 500, e_s: 150, theta: 45, c_nom: 50,
+  a1p: 300, s_bolt: 200, h_ef: 500, theta: 45, c_nom: 50,
   e_p: 75,
   n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
   anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0, k_bd_bolt: 1.9,
@@ -91,13 +93,58 @@ export interface BondAnchorage {
   lb_rqd: number; lb_min: number; lbd: number;
 }
 
+/** Gjengestagenes senterposisjoner [x=⊥V, y=∥V] relativt pilastersenter.
+ *  Rutenettet gjoeres saa kvadratisk som mulig; primtall faller tilbake til én rad.
+ *  Dette er ETT sannhetsgrunnlag: bade compute(), buildModel() og 2D-planen bruker det,
+ *  slik at antall stag i beregningen alltid er antallet som faktisk tegnes. */
+export function boltPattern(n_bolt: number, s_bolt: number): [number, number][] {
+  const n = Math.max(1, Math.round(n_bolt));
+  let nx = Math.round(Math.sqrt(n));
+  while (nx > 1 && n % nx !== 0) nx--;
+  const [cx, cy] = nx >= n / nx ? [nx, n / nx] : [n / nx, nx];
+  const pts: [number, number][] = [];
+  for (let i = 0; i < cx; i++)
+    for (let j = 0; j < cy; j++)
+      pts.push([(i - (cx - 1) / 2) * s_bolt, (j - (cy - 1) / 2) * s_bolt]);
+  return pts;
+}
+
+/** Oppstikkende jern fordelt rundt boyleomkretsen: alltid 4 hjoerner, resten
+ *  fordelt paa sidene proporsjonalt med sidelengdene. Et symmetrisk oppsett gir
+ *  alltid et PARTALL, saa forespurt antall rundes opp til naermeste mulige - og
+ *  det er den FAKTISKE lengden som brukes videre i beregningen. */
+export function barPattern(n_v: number, rx: number, ry: number): [number, number][] {
+  const S = Math.max(4, Math.round((Math.max(4, Math.round(n_v)) + 4) / 2)); // = n_x + n_y
+  const frac = rx + ry > 0 ? rx / (rx + ry) : 0.5;
+  const nx = Math.min(S - 2, Math.max(2, Math.round(S * frac))), ny = S - nx;
+  const pts: [number, number][] = [];
+  for (let i = 0; i < nx; i++) {                    // sider parallelt med X, inkl. hjoerner
+    const x = nx === 1 ? 0 : -rx + (2 * rx * i) / (nx - 1);
+    pts.push([x, ry], [x, -ry]);
+  }
+  for (let j = 1; j < ny - 1; j++) {                // sider parallelt med Y, uten hjoerner
+    const y = -ry + (2 * ry * j) / (ny - 1);
+    pts.push([rx, y], [-rx, y]);
+  }
+  return pts;
+}
+
+/** Senterlinje-innrykk for armeringen i pilastertverrsnittet (X = b ⊥V, Y = h ∥V). */
+export function cageInsets(g: Pick<Inputs, "b" | "h" | "c_nom" | "phi_b" | "phi_v">) {
+  const cS = g.c_nom + g.phi_b / 2, cV = g.c_nom + g.phi_b + g.phi_v / 2;
+  return { cS, cV, rxS: g.b / 2 - cS, ryS: g.h / 2 - cS, rxV: g.b / 2 - cV, ryV: g.h / 2 - cV };
+}
+
 export interface Results {
   conc: ConcreteProps;
+  boltXY: [number, number][]; barXY: [number, number][]; n_v_eff: number;
+  e_h: number; e_s: number;
   fcd: number; fctd: number; fbd: number; fbd_b: number; fbd_bolt: number; fyd: number;
   eta2_b: number; eta2_v: number; eta2_bolt: number;
   d_bolt: number; P_bolt: number; As_bolt: number; fub: number; fyb: number; gMs_b: number;
   isPlate: boolean; isNut: boolean; noAnchor: boolean; a_eff: number; a_nut: number;
   bond: BondAnchorage; l_avail: number; u_bond: number;
+  c_bolt: number; boltFits: boolean;
   A_phb: number; A_v1: number; d_eff: number; z: number; h_sone: number; n_lag: number; A_s_re: number;
   use_lug: boolean; e_s_eff: number; N_reV: number; A_lug: number; V_Rd_lug: number; u_lug: number;
   a_spread_n: number; T_nut: number; a_spread_p: number; T_plate: number;
@@ -144,16 +191,32 @@ export function compute(g: Inputs): Results {
   const n_lag = Math.max(1, Math.floor(h_sone / g.s_b) + 1);
   const A_s_re = g.n_ben * n_lag * A_phb;
   const use_lug = !!g.use_lug;
-  const e_s_eff = use_lug ? g.t_grout + g.h_emb / 2 : g.e_s;
+
+  // ---- Geometri utledet av tverrsnitt + moenstre (ikke inndata) ----
+  const ins = cageInsets(g);
+  const boltXY = boltPattern(g.n_bolt, g.s_bolt);
+  const barXY = barPattern(g.n_v, ins.rxV, ins.ryV);
+  const n_v_eff = barXY.length;              // det som FAKTISK plasseres
+  // e_h: korteste horisontale avstand fra et stag til naermeste oppstikk.
+  // Radiell avstand (ikke bare akseavstand) - konservativt for bade spaltestrekk
+  // (stoerre spredebredde => stoerre T) og for noedvendig innstoping.
+  let e_h = Infinity;
+  for (const [bx, by] of boltXY)
+    for (const [ax, ay] of barXY) e_h = Math.min(e_h, Math.hypot(bx - ax, by - ay));
+  if (!Number.isFinite(e_h)) e_h = 0;
+  // e_s: dybde fra betongoverkant (der V angriper) til boylegruppas tyngdepunkt.
+  // Med skjaernokk overfoeres V paa nokken i stedet -> arm til nokkens midthoyde.
+  const e_s = g.c_nom + g.phi_b / 2 + g.s_b * (n_lag - 1) / 2;
+  const e_s_eff = use_lug ? g.t_grout + g.h_emb / 2 : e_s;
   const N_reV = g.V * (1 + e_s_eff / z);
   const A_lug = g.w_lug * g.h_emb;
   const V_Rd_lug = Math.min(g.k_lug, 3) * fcd * A_lug / 1000;
   const u_lug = use_lug ? g.V / V_Rd_lug : 0;
   // Uten endeforankring finnes ingen konsentrert endelast -> ingen spaltestrekk derfra;
   // strekket foeres inn ved heft langs staget i stedet (se bond nedenfor).
-  const a_spread_n = a_eff + 2 * g.e_h;
+  const a_spread_n = a_eff + 2 * e_h;
   const T_nut = noAnchor ? 0 : 0.25 * (1 - a_eff / a_spread_n) * g.N_t;
-  const a_spread_p = Math.min(g.b, g.a1p + 2 * g.e_h);
+  const a_spread_p = Math.min(g.b, g.a1p + 2 * e_h);
   const T_plate = 0.25 * (1 - g.a1p / a_spread_p) * g.N_c;
   const N_reA = T_nut + N_reV, N_reB = T_plate + N_reV, N_re = Math.max(N_reA, N_reB);
   const N_Rd_re = A_s_re * g.fyk / g.g_Msre / 1000;
@@ -162,7 +225,7 @@ export function compute(g: Inputs): Results {
   const cap1 = g.n_ben * A_phb * g.fyk / g.g_Msre / 1000;
   const n_lag_req = Math.max(1, Math.ceil(N_re / cap1));
   const s_b_max = n_lag_req > 1 ? h_sone / (n_lag_req - 1) : h_sone;
-  const N_Rd_v = g.n_v * A_v1 * fyd / 1000;
+  const N_Rd_v = n_v_eff * A_v1 * fyd / 1000;   // faktisk antall oppstikk, ikke onsket
   const N_Rd_s = g.n_bolt * As_bolt * fub / gMs_b / 1000;
   const F_rod = g.N_t / g.n_bolt;
   const Ac0 = A_bear, Ac1 = a_spread_n ** 2;
@@ -177,8 +240,16 @@ export function compute(g: Inputs): Results {
   const sig_bolt = F_rod * 1000 / As_bolt;               // dimensjonerende stagspenning
   const a_clear = Math.max(g.s_bolt - d_bolt, 0);        // fri avstand mellom stag
   // overdekning fra stag til naermeste betongflate, i hver retning
-  const c_side = Math.max(g.b / 2 - g.s_bolt / 2 - d_bolt / 2, 0);   // ⊥V (paa tvers av mur)
-  const c_edge = Math.max(g.h / 2 - g.s_bolt / 2 - d_bolt / 2, 0);   // ∥V (langs mur)
+  // overdekning maales fra det YTTERSTE staget i moensteret
+  const bxMax = Math.max(...boltXY.map((p) => Math.abs(p[0])));
+  const byMax = Math.max(...boltXY.map((p) => Math.abs(p[1])));
+  const c_side = Math.max(g.b / 2 - bxMax - d_bolt / 2, 0);          // ⊥V (paa tvers av mur)
+  const c_edge = Math.max(g.h / 2 - byMax - d_bolt / 2, 0);          // ∥V (langs mur)
+  // Faktisk (uklamret) overdekning til ytterste stag - negativ betyr at moensteret
+  // ikke faar plass i tverrsnittet. Med n_bolt*s_bolt stort nok havner stagene
+  // utenfor betongen, og det skal ikke gaa stille forbi.
+  const c_bolt = Math.min(g.b / 2 - bxMax, g.h / 2 - byMax) - d_bolt / 2;
+  const boltFits = c_bolt >= g.c_nom - 1e-9;
   const straight = g.anch_shape === "rett";
   // §8.4.4 tabell 8.2: rette stenger cd = min(a/2, c1, c); kroker cd = min(a/2, c1)
   const cd = straight ? Math.min(a_clear / 2, c_edge, c_side) : Math.min(a_clear / 2, c_edge);
@@ -215,18 +286,19 @@ export function compute(g: Inputs): Results {
   const a6 = 1.5;
   const l0 = Math.max(a6 * lb_rqd, 15 * g.phi_v, 200);
   const tan = Math.tan(g.theta * PI / 180);
-  const l_spread = g.e_h / (tan || 1e-9);
+  const l_spread = e_h / (tan || 1e-9);
   const h_ef_req = l_spread + l0 + g.c_nom;
   const u_stal = N_re / N_Rd_re, u_ank = N_re / N_Rd_a, u_ax = g.N_t / N_Rd_v,
     u_bolt = g.N_t / N_Rd_s, u_bear = noAnchor ? 0 : F_rod / F_Rdu, u_emb = h_ef_req / g.h_ef,
     u_plate = isPlate ? t_pl_req / g.t_pl : 0;
   // Endetrykk kontrolleres kun med endeforankring; uten den styrer heftforankringen.
   const checks = [u_stal, u_ank, u_ax, u_emb, u_bolt, g.s_b / s_b_max,
+    boltFits ? 0 : 99,                                // moensteret maa faa plass
     ...(noAnchor ? [u_bond] : [u_bear]),
     ...(isPlate ? [u_plate] : []), ...(use_lug ? [u_lug] : [])];
   const allOk = checks.every((u) => u <= 1.0001);
   return {
-    conc: CP,
+    conc: CP, boltXY, barXY, n_v_eff, e_h, e_s, c_bolt, boltFits,
     fcd, fctd, fbd, fbd_b, fbd_bolt, fyd, eta2_b, eta2_v, eta2_bolt,
     d_bolt, P_bolt, As_bolt, fub, fyb, gMs_b,
     isPlate, isNut, noAnchor, a_eff, a_nut, bond, l_avail, u_bond,

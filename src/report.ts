@@ -14,8 +14,7 @@ export const SYM: Record<string, string> = {
   H_pil: "H_pilaster", H_wall: "H_ringmur",
   b: "b", h: "h", t_wall: "t_wall", e_p: "e_p",
   anch_shape: "stangform", K_anch: "K", alpha4: "α_4", p_tr: "p", k_bd_bolt: "k_bd,stag",
-  a1p: "a_1,plate", s_bolt: "s_bolt", e_h: "e_h",
-  h_ef: "h_ef", e_s: "e_s", theta: "θ", c_nom: "c_nom",
+  a1p: "a_1,plate", s_bolt: "s_bolt", h_ef: "h_ef", theta: "θ", c_nom: "c_nom",
   n_bolt: "n_bolt", boltsize: "bolt", grade: "klasse", anchor: "endeforankr.",
   a_anch: "a_1,ende", t_pl: "t_plate", fy_pl: "f_y,plate",
   phi_b: "φ_b", n_ben: "n_ben", s_b: "s_b", phi_v: "φ_v", n_v: "n_v",
@@ -53,9 +52,7 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
       "Pilasteren trenger ikke flukte med noen murflate"),
     M("a1p", "Bunnplate a₁", "mm", "bunnplate — lastflatebredde (trykk)"),
     M("s_bolt", "Boltavstand s_bolt", "mm", "senteravstand stag"),
-    M("e_h", "e_h stag→jern", "mm", "horisontal avstand stag → oppstikkende jern"),
     M("h_ef", "Innstøping h_ef", "mm", "innstøpingsdybde stag (mutter/plate i bunn)"),
-    M("e_s", "Arm e_s", "mm", "arm: V (topp) → tyngdepunkt bøyler (uten nokk)"),
     M("theta", "Spredningsvinkel θ", "°", "spredningsvinkel endetrykk (fra loddrett)"),
     M("c_nom", "Overdekning c_nom", "mm", "overdekning") ] },
   { title: "Bolter", items: [
@@ -127,6 +124,8 @@ export const FML: Record<string, string> = {
   "N_Ed,re": "max(N_re,A; N_re,B)", "N_Rd,re": "A_s,re·f_yk/γ_Ms,re",
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
   "e_p": "inndata", "utstikk": "e_p+b/2−t_wall/2", "a_eff": "√A_lastflate",
+  "e_h": "min |stag − oppstikk| i planet", "e_s": "c_nom+φ_b/2+s_b·(n_lag−1)/2",
+  "n_stag": "rutenett nx·ny = n_bolt", "n_v,eff": "4 hjørner + fordelt langs sidene",
   "η_2": "1,0 (φ≤32) ellers (132−φ)/100", "f_bd,stag": "k_bd·η₁·η₂·f_ctd",
   "σ_sd,stag": "N_Ed,t/(n_bolt·A_s,bolt)", "l_b,rqd,stag": "(d/4)·(σ_sd/f_bd)",
   "c_d": "min(a/2; c₁; c)", "α_1": "1,0 rett / 0,7 krok",
@@ -155,6 +154,7 @@ export const REF: Record<string, string> = {
   "N_re,A": "superposisjon", "N_re,B": "superposisjon",
   "N_Ed,re": "dim.", "N_Rd,re": "EC2-4 §7.2.1.9", "N_Rd,a": "EC2-4 §7.2.1/EC2 §8.4",
   "s_b,maks": "dim.", "e_p": "geometri", "utstikk": "geometri", "a_eff": "EC2 §6.7",
+  "e_h": "geometri", "e_s": "EC2-4 §7.2.2.5", "n_stag": "geometri", "n_v,eff": "geometri",
   "η_2": "EC2 §8.4.2", "f_bd,stag": "BEB B19 19.3.4", "σ_sd,stag": "EC2 §8.4.3",
   "l_b,rqd,stag": "EC2 §8.4.3", "c_d": "EC2 §8.4.4 fig. 8.3", "α_1": "EC2 tab. 8.2",
   "α_2": "EC2 tab. 8.2", "α_3": "EC2 tab. 8.2", "α_4": "EC2 tab. 8.2", "α_5": "EC2 tab. 8.2",
@@ -192,6 +192,12 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("e_p", "inndata", `${f0(g.e_p)} mm`);
   D("utstikk", `${g.e_p}+${g.b}/2−${g.t_wall}/2`, `${f0(pilasterProjection(g))} mm`);
 
+  G("Avledet av tverrsnitt og armeringsmønster (ikke inndata)");
+  D("n_stag", `${g.n_bolt} stag, s_bolt = ${g.s_bolt}`, `${R.boltXY.length} stk`);
+  D("n_v,eff", `ønsket ${g.n_v}`, `${R.n_v_eff} stk`);
+  D("e_h", `korteste avstand stag → oppstikk`, `${f1(R.e_h)} mm`);
+  D("e_s", `${g.c_nom}+${g.phi_b}/2+${g.s_b}·(${R.n_lag}−1)/2`, `${f0(R.e_s)} mm`);
+
   G("Bolt fra dimensjon & klasse");
   D("A_s,bolt", `π/4·(${R.d_bolt}−0,9382·${R.P_bolt})²`, `${f0(R.As_bolt)} mm²`);
   D("f_ub", `${String(g.grade).split(".")[0]}·100`, `${f0(R.fub)} MPa`);
@@ -215,8 +221,8 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   }
 
   G("Spaltestrekk fra endeforankring / bunnplate (NS-EN 1992-1-1 §6.5/§6.7)");
-  D("a_spr,mut", `${f0(R.a_eff)}+2·${g.e_h}`, `${f0(R.a_spread_n)} mm`);
-  D("a_spr,pl", `min(${g.b}; ${g.a1p}+2·${g.e_h})`, `${f0(R.a_spread_p)} mm`);
+  D("a_spr,mut", `${f0(R.a_eff)}+2·${f0(R.e_h)}`, `${f0(R.a_spread_n)} mm`);
+  D("a_spr,pl", `min(${g.b}; ${g.a1p}+2·${f0(R.e_h)})`, `${f0(R.a_spread_p)} mm`);
   D("T_mutter", R.noAnchor ? "ingen endeforankring → ingen endelast"
     : `¼(1−${f0(R.a_eff)}/${f0(R.a_spread_n)})·${g.N_t}`, `${f1(R.T_nut)} kN`);
   D("T_plate", `¼(1−${g.a1p}/${f0(R.a_spread_p)})·${g.N_c}`, `${f1(R.T_plate)} kN`);
@@ -258,7 +264,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("σ_sd", `${g.N_t}·10³/(${g.n_bolt}·${f0(R.A_v1)})`, `${f0(R.sig_sd)} MPa`);
   D("l_b,rqd", `(${g.phi_v}/4)(${f0(R.sig_sd)}/${f2(R.fbd)})`, `${f0(R.lb_rqd)} mm`);
   D("l_0", `${f2(R.a6)}·${f0(R.lb_rqd)}`, `${f0(R.l0)} mm`);
-  D("l_spred", `${g.e_h}/tan ${g.theta}°`, `${f0(R.l_spread)} mm`);
+  D("l_spred", `${f0(R.e_h)}/tan ${g.theta}°`, `${f0(R.l_spread)} mm`);
   D("h_ef,nødv", `${f0(R.l_spread)}+${f0(R.l0)}+${g.c_nom}`, `${f0(R.h_ef_req)} mm`);
 
   G("Bøyler — dimensjonerende & kapasitet (NS-EN 1992-4 §7.2.1)");
@@ -276,6 +282,9 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
       R.u_lug <= 1, "EC2 §6.7");
   C("Bøyleavstand", `valgt s_b ${f0(g.s_b)} ≤ s_b,maks ${f0(R.s_b_max)} mm`,
     g.s_b <= R.s_b_max, "dim.");
+  C("Stagmønster i tverrsnittet",
+    `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(g.c_nom)} mm` +
+    ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt)})`, R.boltFits, "geometri");
   C("Stål (bøyler)", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,re ${f1(R.N_Rd_re)} kN  (u=${f2(R.u_stal)})`,
     R.u_stal <= 1, "EC2-4 §7.2.1.9");
   C("Forankring bøyle", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,a ${f1(R.N_Rd_a)} kN  (u=${f2(R.u_ank)})`,

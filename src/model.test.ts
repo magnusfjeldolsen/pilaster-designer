@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compute, DEFAULTS } from "./calc";
+import { boltPattern, cageInsets, compute, DEFAULTS } from "./calc";
 import { buildModel, pilasterOffsetX } from "./model";
 
 const bbox = (els: ReturnType<typeof buildModel>, id: string) => {
@@ -144,5 +144,88 @@ describe("buildModel()", () => {
       const same = first[0] === last[0] && first[1] === last[1] && first[2] === last[2];
       expect(same).toBe(false); // start != slutt (aapen boyle)
     }
+  });
+});
+
+describe("moenstre: beregning og modell kan ikke komme ut av synk", () => {
+  it("n_bolt styrer FAKTISK antall stag i modellen", () => {
+    for (const n of [4, 6, 8, 9]) {
+      const v = { ...DEFAULTS, n_bolt: n };
+      const els = buildModel(v, compute(v));
+      expect(els.filter((e) => e.id.startsWith("rod")).length, `n_bolt=${n}`).toBe(n);
+    }
+  });
+
+  it("n_bolt=4 gir samme kvadratmoenster som foer", () => {
+    const p = boltPattern(4, 200).map(([x, y]) => `${x},${y}`).sort();
+    expect(p).toEqual(["-100,-100", "-100,100", "100,-100", "100,100"].sort());
+  });
+
+  it("beregningens N_Rd,s bygger paa antall stag som tegnes", () => {
+    const v = { ...DEFAULTS, n_bolt: 8 };
+    const R = compute(v);
+    expect(R.boltXY.length).toBe(8);
+    expect(buildModel(v, R).filter((e) => e.id.startsWith("rod")).length).toBe(R.boltXY.length);
+  });
+
+  it("oppstikk: modellen tegner n_v_eff, og beregningen bruker samme tall", () => {
+    for (const n of [4, 6, 8, 12, 16]) {
+      const v = { ...DEFAULTS, n_v: n };
+      const R = compute(v);
+      const drawn = buildModel(v, R).filter((e) => e.id.startsWith("bar")).length;
+      expect(drawn, `n_v=${n}`).toBe(R.n_v_eff);
+      expect(R.N_Rd_v).toBeCloseTo(R.n_v_eff * R.A_v1 * R.fyd / 1000, 6);
+    }
+  });
+
+  it("n_v over 8 kappes ikke lenger stille", () => {
+    const v = { ...DEFAULTS, n_v: 16 };
+    const R = compute(v);
+    expect(R.n_v_eff).toBe(16);                       // foer: 8 tegnet, 16 regnet
+    expect(buildModel(v, R).filter((e) => e.id.startsWith("bar")).length).toBe(16);
+  });
+
+  it("oppstikk ligger paa boylens senterlinje, med hjoerner", () => {
+    const R = compute(DEFAULTS);
+    const { rxV, ryV } = cageInsets(DEFAULTS);
+    for (const [x, y] of R.barXY) {
+      expect(Math.abs(x) <= rxV + 1e-9 && Math.abs(y) <= ryV + 1e-9).toBe(true);
+      // hvert jern staar paa en av de fire sidene
+      expect(Math.abs(Math.abs(x) - rxV) < 1e-9 || Math.abs(Math.abs(y) - ryV) < 1e-9).toBe(true);
+    }
+    const corners = R.barXY.filter(([x, y]) =>
+      Math.abs(Math.abs(x) - rxV) < 1e-9 && Math.abs(Math.abs(y) - ryV) < 1e-9);
+    expect(corners.length).toBe(4);
+  });
+});
+
+describe("e_h og e_s avledes av geometrien", () => {
+  it("e_h er korteste avstand fra stag til oppstikk", () => {
+    const R = compute(DEFAULTS);
+    let min = Infinity;
+    for (const [bx, by] of R.boltXY)
+      for (const [ax, ay] of R.barXY) min = Math.min(min, Math.hypot(bx - ax, by - ay));
+    expect(R.e_h).toBeCloseTo(min, 9);
+    expect(R.e_h).toBeCloseTo(36.1, 1);
+  });
+
+  it("stoerre tverrsnitt flytter oppstikkene lenger fra stagene", () => {
+    const wide = compute({ ...DEFAULTS, b: 600, h: 600 });
+    expect(wide.e_h).toBeGreaterThan(compute(DEFAULTS).e_h);
+  });
+
+  it("e_s er dybden til boylegruppas tyngdepunkt", () => {
+    const R = compute(DEFAULTS);
+    expect(R.e_s).toBeCloseTo(DEFAULTS.c_nom + DEFAULTS.phi_b / 2
+      + DEFAULTS.s_b * (R.n_lag - 1) / 2, 9);
+    // tettere boyler -> flere lag, men lagene ligger naermere hverandre
+    const dense = compute({ ...DEFAULTS, s_b: 50 });
+    expect(dense.n_lag).toBeGreaterThan(R.n_lag);
+  });
+
+  it("skjaernokk overstyrer e_s med arm til nokkens midthoyde", () => {
+    const R = compute({ ...DEFAULTS, use_lug: true });
+    expect(R.e_s_eff).toBeCloseTo(DEFAULTS.t_grout + DEFAULTS.h_emb / 2, 9);
+    expect(R.e_s_eff).not.toBeCloseTo(R.e_s, 1);
   });
 });

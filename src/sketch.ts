@@ -130,27 +130,25 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
     mech === "shear" || mech === "split" ? 2.8 : 2, `rx="11" ry="11"`));
   out.push(tx(pL - 6, byB + 4, `bøyle Ø${v.phi_b.toFixed(0)}`, boyleCol, 10, "end"));
 
-  // oppstikkende jern (hjørner + midt)
-  const rv = Math.max(4, v.phi_v * sc * 0.9), midY = (byT + byB) / 2, midX = (bxL + bxR) / 2;
+  // Armering og stag tegnes fra SAMME moenstre som beregningen og 3D-modellen bruker.
+  // Moensterkoordinatene er [⊥V, ∥V] om pilastersenteret -> verdens (x0 + px, py).
+  const toScreen = ([px, py]: [number, number]): [number, number] => [sxx(py), sy(x0 + px)];
+  const midY = (byT + byB) / 2;
+  const rv = Math.max(3, v.phi_v * sc * 0.9);
   const axHi = mech === "axial";
-  const barPts: [number, number][] = [
-    [bxL, byT], [midX, byT], [bxR, byT], [bxR, midY],
-    [bxR, byB], [midX, byB], [bxL, byB], [bxL, midY],
-  ].slice(0, Math.max(1, v.n_v)) as [number, number][];
+  const barPts = R.barXY.map(toScreen);
   for (const [x, y] of barPts)
     out.push(circ(x, y, rv, axHi ? C.axial : C.s1, axHi ? C.axial : C.ink, 1.8));
   out.push(ln(bxR, byT, bxR + 30, byT - 20, axHi ? C.axial : C.ink3, 1));
-  out.push(tx(bxR + 34, byT - 22, `${v.n_v}Ø${v.phi_v.toFixed(0)}`, axHi ? C.axial : C.ink,
+  out.push(tx(bxR + 34, byT - 22, `${R.n_v_eff}Ø${v.phi_v.toFixed(0)}`, axHi ? C.axial : C.ink,
     11, "start", "700"));
 
-  // gjengestag (kvadratisk mønster, sentrert i pilasteren)
-  const sb = Math.min((pR - pL) * 0.3, v.s_bolt * sc / 2), rb = Math.max(3.5, R.d_bolt / 2 * sc);
+  // gjengestag
+  const rb = Math.max(3, R.d_bolt / 2 * sc);
   const pcx = (pL + pR) / 2, pcy = (pilT + pilB) / 2;
-  const boltPts: [number, number][] = [
-    [pcx - sb, pcy - sb], [pcx + sb, pcy - sb], [pcx - sb, pcy + sb], [pcx + sb, pcy + sb],
-  ];
+  const boltPts = R.boltXY.map(toScreen);
   if (R.isPlate) {
-    const wpl = Math.min(2 * sb * 0.85, v.a_anch * sc);
+    const wpl = Math.max(6, v.a_anch * sc);
     for (const [x, y] of boltPts)
       out.push(rect(x - wpl / 2, y - wpl / 2, wpl, wpl, "none", C.ink3, 1, `stroke-dasharray="3 2"`));
   }
@@ -158,8 +156,11 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
     out.push(circ(x, y, rb, C.ink));
     out.push(circ(x, y, rb + 2.5, "none", C.ink, 1));
   }
-  out.push(tx(pL - 6, byT + 4, `${v.n_bolt}×${v.boltsize}`, C.ink2, 10, "end"));
-  out.push(dim(pcx - sb, pilT - 9, pcx + sb, pilT - 9, "s_bolt", C.ink3, true));
+  out.push(tx(pL - 6, byT + 4, `${R.boltXY.length}×${v.boltsize}`, C.ink2, 10, "end"));
+  // s_bolt maales mellom to nabostag i moensteret
+  const sb = Math.max(...boltPts.map(([x]) => Math.abs(x - pcx)), 1);
+  if (R.boltXY.length > 1)
+    out.push(dim(pcx - sb, pilT - 9, pcx + sb, pilT - 9, "s_bolt", C.ink3, true));
 
   // laster: N inn i planet, V langs X (nedover på skjermen = ∥ skjærretning)
   out.push(circ(pcx, pcy, 9, C.s1, C.acc, 2));
@@ -229,7 +230,7 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
   const bx = Math.max(15, Math.min(pxB * 0.2, v.s_bolt * 0.42 / 2));
   const boltL = cx - bx, boltR = cx + bx;
   const nutY = Math.min(pilBot - 14, top + v.h_ef * s);
-  const ehpx = Math.max(12, Math.min(pxB * 0.3, v.e_h * 0.42));
+  const ehpx = Math.max(12, Math.min(pxB * 0.3, R.e_h * 0.42));
   const barL = Math.max(L + 6, boltL - ehpx), barR = Math.min(Rr - 6, boltR + ehpx);
 
   // effektiv sone + bøylelag
