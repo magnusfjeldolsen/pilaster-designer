@@ -69,13 +69,18 @@ const svg = (w: number, h: number, body: string, title: string) =>
  * PLAN — viser pilasterens plassering i ringmuren (ensidig/sentrisk)  *
  * ------------------------------------------------------------------ */
 export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
-  const W = 560, H = 340, cx = W / 2, yTop = 70;
+  const W = 560, cx = W / 2, yTop = 70;
   const x0 = pilasterOffsetX(v);
   // Verdensakser: X = paa tvers av ringmuren (mal b) -> skjerm-Y (nedover)
   //               Y = langs ringmuren = skjaerretning V (mal h) -> skjerm-X (hoyre)
   const xLo = Math.min(-v.t_wall / 2, x0 - v.b / 2);
   const xHi = Math.max(v.t_wall / 2, x0 + v.b / 2);
-  const sc = Math.min(170 / Math.max(xHi - xLo, 1), 190 / Math.max(v.h, 1), 0.5);
+  // Skalaen bestemmes av TVERRSNITTSMAALENE alene. Tidligere ble den tilpasset
+  // (xHi - xLo), som vokser med e_p - da krympet pilasteren paa skjermen naar
+  // eksentrisiteten oekte, som om selve soylen ble mindre. Tegneflaten vokser
+  // i stedet nedover slik at eksentrisiteten faar plass.
+  const sc = Math.min(170 / Math.max(v.b, v.t_wall, 1), 190 / Math.max(v.h, 1), 0.5);
+  const H = Math.ceil(Math.max(340, yTop + (xHi - xLo) * sc + 95));
   const sy = (wx: number) => yTop + (wx - xLo) * sc;   // verdens-X -> skjerm-Y
   const sxx = (wy: number) => cx + wy * sc;            // verdens-Y -> skjerm-X
 

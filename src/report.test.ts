@@ -114,3 +114,27 @@ describe("2D-tegninger", () => {
     expect(drawPlan(DEFAULTS, R, "shear")).toContain("∥ ringmur");
   });
 });
+
+describe("plantegningens skala", () => {
+  // e_p flytter pilasteren, den endrer ikke stoerrelsen paa den
+  const widthOf = (svg: string) => {
+    const m = svg.match(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g) || [];
+    // andre rect er pilasteren (foerste er ringmuren)
+    const r = m[1].match(/width="([\d.]+)"/)!;
+    return parseFloat(r[1]);
+  };
+  it("pilasteren tegnes like stor uansett e_p", () => {
+    const w = [0, 75, 300, 600].map((e_p) => {
+      const v = { ...DEFAULTS, e_p };
+      return widthOf(drawPlan(v, compute(v), "shear"));
+    });
+    for (const x of w) expect(x).toBeCloseTo(w[0], 6);
+  });
+  it("tegneflaten vokser i stedet, slik at eksentrisiteten faar plass", () => {
+    const vb = (e_p: number) => {
+      const v = { ...DEFAULTS, e_p };
+      return +drawPlan(v, compute(v), "shear").match(/viewBox="0 0 \d+ (\d+)"/)![1];
+    };
+    expect(vb(600)).toBeGreaterThan(vb(0));
+  });
+});
