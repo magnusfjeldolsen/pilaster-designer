@@ -207,7 +207,7 @@ export interface Results {
   a_spread_n: number; T_nut: number; a_spread_p: number; T_plate: number;
   N_reA: number; N_reB: number; N_re: number; N_Rd_re: number; l1: number; N_Rd_a: number;
   lbd_v: number; l_trans: number;
-  lapClear: number; lapClearLim: number; lapExtra: number;
+  lapClear: number; lapClearLim: number; lapExtra: number; l_spread_eff: number;
   n_lag_req: number; s_b_max: number; N_Rd_v: number; N_Rd_s: number; F_rod: number;
   Ac0: number; Ac1: number; F_Rdu: number; p_bear: number; c_pl: number; t_pl_req: number;
   sig_sd: number; lb_rqd: number; a6: number; l0: number; l_spread: number; h_ef_req: number;
@@ -399,12 +399,14 @@ export function compute(g: Inputs): Results {
   const a6 = 1.5;                                    // §8.7.3 tab. 8.3, 100 % skjoetet
   const LAP = solveLength(g.phi_v, sig_sd, fbd, cd_v, true, As_v, a6, true);
   const ANC = solveLength(g.phi_v, sig_sd, fbd, cd_v, true, As_v, 1, false);
-  // §8.7.2(3): staget og oppstikket ligger ikke inntil hverandre. Er den FRIE
-  // avstanden mellom dem stoerre enn max(4*phi; 50 mm), skal omfaringslengden
-  // oekes med et tillegg lik den frie avstanden.
+  // §8.7.2(3): staget og oppstikket ligger ikke inntil hverandre. KRITERIET er den
+  // frie avstanden mot max(4*phi; 50 mm). Naar grensa er overskredet legges
+  // SENTERAVSTANDEN e_h til: kreftene gaar fra tyngdepunkt til tyngdepunkt, og
+  // stengene er symmetriske om sin egen akse. Senteravstanden svarer samtidig til
+  // projeksjonen av en 45 graders trykkstav mellom stag og oppstikk.
   const lapClear = Math.max(e_h - d_bolt / 2 - g.phi_v / 2, 0);
   const lapClearLim = Math.max(4 * g.phi_v, 50);
-  const lapExtra = lapClear > lapClearLim ? lapClear : 0;
+  const lapExtra = lapClear > lapClearLim ? e_h : 0;
   const l0 = LAP.L + lapExtra, lbd_v = ANC.L;
   const lb_rqd = LAP.lb;
   const tan = Math.tan(g.theta * PI / 180);
@@ -414,7 +416,12 @@ export function compute(g: Inputs): Results {
   // ingen skjoet, bare krav om at oppstikkene FORANKRES for kraften de tar opp
   // (Betongelementboka B19 19.7.2.2: kapasiteten regnes uten heft langs stangen).
   const l_trans = noAnchor ? l0 : lbd_v;
-  const h_ef_req = l_spread + l_trans + c_nom;
+  // e_h skal telles EN gang. Uten endeforankring er §8.7.2(3)-tillegget allerede
+  // senteravstanden, altsaa den samme 45-graders trykkstaven som l_spred beskriver
+  // - og uten endeplate finnes det uansett ingen konsentrert endelast aa spre.
+  // Med endeforankring er det l_spred som beskriver spredningen fra plata.
+  const l_spread_eff = noAnchor ? 0 : l_spread;
+  const h_ef_req = l_spread_eff + l_trans + c_nom;
   const u_stal = N_re / N_Rd_re, u_ank = N_re / N_Rd_a, u_ax = g.N_t / N_Rd_v,
     u_bolt = g.N_t / N_Rd_s, u_bear = noAnchor ? 0 : F_rod / F_Rdu, u_emb = h_ef_req / g.h_ef,
     u_plate = isPlate ? t_pl_req / g.t_pl : 0;
@@ -435,7 +442,7 @@ export function compute(g: Inputs): Results {
     a_spread_n, T_nut, a_spread_p, T_plate, N_reA, N_reB, N_re, N_Rd_re, l1, N_Rd_a,
     n_lag_req, s_b_max, N_Rd_v, N_Rd_s, F_rod, Ac0, Ac1, F_Rdu, p_bear, c_pl, t_pl_req,
     sig_sd, lb_rqd, a6, l0, lbd_v, l_trans, l_spread, h_ef_req,
-    lapClear, lapClearLim, lapExtra,
+    lapClear, lapClearLim, lapExtra, l_spread_eff,
     u_stal, u_ank, u_ax, u_bolt, u_bear, u_emb, u_plate, govA: N_reA >= N_reB, allOk,
   };
 }

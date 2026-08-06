@@ -355,7 +355,9 @@ describe("skjoet mellom stag og oppstikk som ikke ligger inntil hverandre (§8.7
     const v = { ...DEFAULTS, anchor: "ingen" as const, b: 800, h: 800 };
     const R = compute(v);
     expect(R.lapClear).toBeGreaterThan(R.lapClearLim);
-    expect(R.lapExtra).toBeCloseTo(R.lapClear, 6);
+    // tillegget er SENTERAVSTANDEN, ikke den frie avstanden
+    expect(R.lapExtra).toBeCloseTo(R.e_h, 6);
+    expect(R.lapExtra).toBeGreaterThan(R.lapClear);
     // tillegget ligger faktisk i l_0 og dermed i noedvendig innstoping
     const uten = compute({ ...v, phi_v: 60 });        // 4*60 = 240 > fri avstand -> ingen tillegg
     expect(uten.lapExtra).toBe(0);
@@ -379,5 +381,29 @@ describe("skjoet mellom stag og oppstikk som ikke ligger inntil hverandre (§8.7
     expect(ingen.lapExtra).toBeGreaterThan(0);
     expect(plate.l_trans).toBe(plate.lbd_v);          // forankring, ikke omfaring
     expect(plate.h_ef_req).toBeLessThan(ingen.h_ef_req);
+  });
+});
+
+describe("e_h telles noeyaktig en gang i noedvendig innstoping", () => {
+  it("uten endeforankring ligger spredningen i omfaringstillegget", () => {
+    const v = { ...DEFAULTS, anchor: "ingen" as const, b: 800, h: 800 };
+    const R = compute(v);
+    expect(R.lapExtra).toBeCloseTo(R.e_h, 6);       // tillegget ER senteravstanden
+    expect(R.l_spread_eff).toBe(0);                 // ... saa l_spred skal ikke med i tillegg
+    expect(R.h_ef_req).toBeCloseTo(R.l_trans + R.c_nom, 6);
+  });
+
+  it("med endeforankring er det l_spred som beskriver spredningen", () => {
+    const R = compute({ ...DEFAULTS, b: 800, h: 800 });
+    expect(R.l_spread_eff).toBeCloseTo(R.l_spread, 6);
+    expect(R.l_trans).toBe(R.lbd_v);                // forankring, uten skjoettillegg
+    expect(R.h_ef_req).toBeCloseTo(R.l_spread + R.lbd_v + R.c_nom, 6);
+  });
+
+  it("h_ef,nodv vokser med e_h, men bare med ett bidrag", () => {
+    const base = { ...DEFAULTS, anchor: "ingen" as const, b: 800, h: 800 };
+    const R = compute(base);
+    // e_h inngaar en gang: h_ef,req - (l0 uten tillegg) - c_nom == e_h
+    expect(R.h_ef_req - (R.l0 - R.lapExtra) - R.c_nom).toBeCloseTo(R.e_h, 6);
   });
 });
