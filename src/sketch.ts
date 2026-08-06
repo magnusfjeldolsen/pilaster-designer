@@ -123,7 +123,7 @@ export function drawPlan(v: Inputs, R: Results, mech: Mech): string {
   }
 
   // bøyle
-  const cov = Math.max(6, v.c_nom * sc);
+  const cov = Math.max(6, R.c_nom * sc);
   const bxL = pL + cov, bxR = pR - cov, byT = pilT + cov, byB = pilB - cov;
   const boyleCol = mech === "axial" ? C.ink3 : C.acc;
   out.push(rect(bxL, byT, bxR - bxL, byB - byT, "none", boyleCol,
@@ -234,7 +234,7 @@ export function drawSection(v: Inputs, R: Results, mech: Mech): string {
   const barL = Math.max(L + 6, boltL - ehpx), barR = Math.min(Rr - 6, boltR + ehpx);
 
   // effektiv sone + bøylelag
-  const zTop = top + Math.max(6, v.c_nom * s);
+  const zTop = top + Math.max(6, R.c_nom * s);
   const zBot = Math.min(pilBot - 4, zTop + R.h_sone * s);
   const step = Math.max(6, v.s_b * s);
   out.push(rect(L + 2, zTop, pxB - 4, zBot - zTop, C.shear, "none", 0, `opacity="0.08"`));

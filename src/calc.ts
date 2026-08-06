@@ -32,13 +32,59 @@ export function concreteProps(fck: number): ConcreteProps {
 /** Noekkelvidde for sekskantmutter som funksjon av gjengediameter. */
 export const NUT_ACROSS_FLATS = 1.5;
 
+/* ---------- Overdekning avledet av eksponeringsklasse, EC2 §4.4.1 ---------- */
+
+export const EXPOSURE_CLASSES = [
+  "X0", "XC1", "XC2/XC3", "XC4", "XD1/XS1", "XD2/XS2", "XD3/XS3",
+] as const;
+export type ExposureClass = typeof EXPOSURE_CLASSES[number];
+
+/** Tabell 4.4N - c_min,dur [mm] for slakkarmering, konstruksjonsklasse S1..S6. */
+const CMIN_DUR: Record<ExposureClass, number[]> = {
+  "X0":      [10, 10, 10, 10, 15, 20],
+  "XC1":     [10, 10, 10, 15, 20, 25],
+  "XC2/XC3": [10, 15, 20, 25, 30, 35],
+  "XC4":     [15, 20, 25, 30, 35, 40],
+  "XD1/XS1": [20, 25, 30, 35, 40, 45],
+  "XD2/XS2": [25, 30, 35, 40, 45, 50],
+  "XD3/XS3": [30, 35, 40, 45, 50, 55],
+};
+/** Tabell 4.3N - fasthetsklasse som gir én klasse reduksjon for hver eksponering. */
+const STRENGTH_RED: Record<ExposureClass, number> = {
+  "X0": 30, "XC1": 30, "XC2/XC3": 35, "XC4": 40,
+  "XD1/XS1": 40, "XD2/XS2": 40, "XD3/XS3": 45,
+};
+
+export interface CoverResult {
+  strClass: number;    // konstruksjonsklasse S1..S6 etter tab. 4.3N
+  cMinDur: number; cMinB: number; cMin: number; cNom: number;
+}
+
+/** c_nom = c_min + Dc_dev, med c_min = max(c_min,b; c_min,dur; 10 mm) (§4.4.1.2).
+ *  Konstruksjonsklasse S4 er utgangspunkt: +2 ved 100 aars levetid, -1 ved
+ *  fasthetsklasse over terskelen i tab. 4.3N. */
+export function coverFromExposure(
+  exp: ExposureClass, fck: number, designLife: number, phiOuter: number, dcDev: number,
+): CoverResult {
+  let s = 4;
+  if (designLife >= 100) s += 2;
+  if (fck >= (STRENGTH_RED[exp] ?? 999)) s -= 1;
+  const strClass = Math.min(6, Math.max(1, s));
+  const cMinDur = (CMIN_DUR[exp] ?? CMIN_DUR["XC4"])[strClass - 1];
+  const cMinB = phiOuter;                       // enkeltstang: c_min,b = stangdiameter
+  const cMin = Math.max(cMinB, cMinDur, 10);
+  return { strClass, cMinDur, cMinB, cMin, cNom: cMin + dcDev };
+}
+
 export interface Inputs {
   // geometri [mm / grader]
   H_pil: number; H_wall: number; b: number; h: number; t_wall: number;
   // e_h (stag -> naermeste oppstikk) og e_s (V -> boyletyngdepunkt) legges IKKE inn:
   // begge foelger entydig av tverrsnittet, boltmoensteret og boylelagene.
   a1p: number; s_bolt: number; h_ef: number;
-  theta: number; c_nom: number;
+  theta: number;
+  // c_nom legges IKKE inn: den avledes av eksponeringsklasse etter EC2 §4.4.1.
+  exp_class: ExposureClass; design_life: number; dc_dev: number;
   // Fri eksentrisitet: avstand fra ringmurens senterlinje til pilasterens senterlinje.
   // e_p = 0 gir sentrisk pilaster; pilasteren trenger ikke flukte med noen murflate.
   e_p: number;
@@ -72,7 +118,8 @@ export const GRADES = ["4.6", "5.6", "5.8", "6.8", "8.8", "10.9", "12.9"];
 
 export const DEFAULTS: Inputs = {
   H_pil: 900, H_wall: 900, b: 400, h: 400, t_wall: 250,
-  a1p: 300, s_bolt: 200, h_ef: 500, theta: 45, c_nom: 50,
+  a1p: 300, s_bolt: 200, h_ef: 500, theta: 45,
+  exp_class: "XD1/XS1", design_life: 50, dc_dev: 10,
   e_p: 75,
   n_bolt: 4, boltsize: "M30", grade: "8.8", anchor: "plate", a_anch: 120, t_pl: 25, fy_pl: 355,
   anch_shape: "rett", K_anch: 0.05, alpha4: 1.0, p_tr: 0, k_bd_bolt: 1.9,
@@ -130,13 +177,13 @@ export function barPattern(n_v: number, rx: number, ry: number): [number, number
 }
 
 /** Senterlinje-innrykk for armeringen i pilastertverrsnittet (X = b ⊥V, Y = h ∥V). */
-export function cageInsets(g: Pick<Inputs, "b" | "h" | "c_nom" | "phi_b" | "phi_v">) {
-  const cS = g.c_nom + g.phi_b / 2, cV = g.c_nom + g.phi_b + g.phi_v / 2;
+export function cageInsets(g: Pick<Inputs, "b" | "h" | "phi_b" | "phi_v">, c_nom: number) {
+  const cS = c_nom + g.phi_b / 2, cV = c_nom + g.phi_b + g.phi_v / 2;
   return { cS, cV, rxS: g.b / 2 - cS, ryS: g.h / 2 - cS, rxV: g.b / 2 - cV, ryV: g.h / 2 - cV };
 }
 
 export interface Results {
-  conc: ConcreteProps;
+  conc: ConcreteProps; cover: CoverResult; c_nom: number; z_re: number;
   boltXY: [number, number][]; barXY: [number, number][]; n_v_eff: number;
   e_h: number; e_s: number;
   fcd: number; fctd: number; fbd: number; fbd_b: number; fbd_bolt: number; fyd: number;
@@ -161,6 +208,9 @@ export function compute(g: Inputs): Results {
   const clamp07 = (x: number) => Math.min(Math.max(x, 0.7), 1.0);
   // Betongfasthetene foelger av f_ck alene (tab. 3.1) - ikke inndata.
   const CP = concreteProps(g.fck);
+  // Overdekningen foelger av eksponeringsklassen (§4.4.1); ytterste staal er boylen.
+  const cover = coverFromExposure(g.exp_class, g.fck, g.design_life, g.phi_b, g.dc_dev);
+  const c_nom = cover.cNom;
   const fcd = g.a_cc * g.fck / g.g_c, fctd = g.a_ct * CP.fctk005 / g.g_c;
   const fyd = g.fyk / g.g_s;
   const BS = BOLT_SIZES[g.boltsize] ?? BOLT_SIZES.M30;
@@ -186,14 +236,19 @@ export function compute(g: Inputs): Results {
     : isNut ? Math.sqrt(3) / 2 * a_nut ** 2 : 0;
   const a_eff = Math.sqrt(A_bear);
   const A_phb = PI * g.phi_b ** 2 / 4, A_v1 = PI * g.phi_v ** 2 / 4;
-  const d_eff = g.h - g.c_nom - g.phi_v / 2, z = 0.9 * d_eff;
-  const h_sone = Math.min(g.h_ef - g.c_nom, 1.5 * g.h);
+  const d_eff = g.h - c_nom - g.phi_v / 2, z = 0.9 * d_eff;
+  // NS-EN 1992-4: kun tilleggsarmering innenfor 0,75*h_ef fra festet regnes som
+  // effektiv. Boylelagene ligger paa dybdene z_k = (c_nom + phi_b/2) + k*s_b, saa
+  // sonen maales fra foerste lag ned til 0,75*h_ef (begrenset av pilasterhoyden).
+  const z_re = 0.75 * g.h_ef;
+  const z_first = c_nom + g.phi_b / 2;
+  const h_sone = Math.max(0, Math.min(z_re, g.H_pil) - z_first);
   const n_lag = Math.max(1, Math.floor(h_sone / g.s_b) + 1);
   const A_s_re = g.n_ben * n_lag * A_phb;
   const use_lug = !!g.use_lug;
 
   // ---- Geometri utledet av tverrsnitt + moenstre (ikke inndata) ----
-  const ins = cageInsets(g);
+  const ins = cageInsets(g, c_nom);
   const boltXY = boltPattern(g.n_bolt, g.s_bolt);
   const barXY = barPattern(g.n_v, ins.rxV, ins.ryV);
   const n_v_eff = barXY.length;              // det som FAKTISK plasseres
@@ -206,7 +261,7 @@ export function compute(g: Inputs): Results {
   if (!Number.isFinite(e_h)) e_h = 0;
   // e_s: dybde fra betongoverkant (der V angriper) til boylegruppas tyngdepunkt.
   // Med skjaernokk overfoeres V paa nokken i stedet -> arm til nokkens midthoyde.
-  const e_s = g.c_nom + g.phi_b / 2 + g.s_b * (n_lag - 1) / 2;
+  const e_s = c_nom + g.phi_b / 2 + g.s_b * (n_lag - 1) / 2;
   const e_s_eff = use_lug ? g.t_grout + g.h_emb / 2 : e_s;
   const N_reV = g.V * (1 + e_s_eff / z);
   const A_lug = g.w_lug * g.h_emb;
@@ -249,7 +304,7 @@ export function compute(g: Inputs): Results {
   // ikke faar plass i tverrsnittet. Med n_bolt*s_bolt stort nok havner stagene
   // utenfor betongen, og det skal ikke gaa stille forbi.
   const c_bolt = Math.min(g.b / 2 - bxMax, g.h / 2 - byMax) - d_bolt / 2;
-  const boltFits = c_bolt >= g.c_nom - 1e-9;
+  const boltFits = c_bolt >= c_nom - 1e-9;
   const straight = g.anch_shape === "rett";
   // §8.4.4 tabell 8.2: rette stenger cd = min(a/2, c1, c); kroker cd = min(a/2, c1)
   const cd = straight ? Math.min(a_clear / 2, c_edge, c_side) : Math.min(a_clear / 2, c_edge);
@@ -279,7 +334,7 @@ export function compute(g: Inputs): Results {
     alphaProd, prodOk: alphaProd >= 0.7 - 1e-9,
     lb_rqd: lb_rqd_bolt, lb_min: lb_min_bolt, lbd,
   };
-  const l_avail = Math.max(g.h_ef - g.c_nom, 1e-6);      // tilgjengelig heftlengde
+  const l_avail = Math.max(g.h_ef - c_nom, 1e-6);      // tilgjengelig heftlengde
   const u_bond = noAnchor ? lbd / l_avail : 0;
   const sig_sd = Math.min(F_rod * 1000 / A_v1, fyd);
   const lb_rqd = (g.phi_v / 4) * (sig_sd / fbd);
@@ -287,7 +342,7 @@ export function compute(g: Inputs): Results {
   const l0 = Math.max(a6 * lb_rqd, 15 * g.phi_v, 200);
   const tan = Math.tan(g.theta * PI / 180);
   const l_spread = e_h / (tan || 1e-9);
-  const h_ef_req = l_spread + l0 + g.c_nom;
+  const h_ef_req = l_spread + l0 + c_nom;
   const u_stal = N_re / N_Rd_re, u_ank = N_re / N_Rd_a, u_ax = g.N_t / N_Rd_v,
     u_bolt = g.N_t / N_Rd_s, u_bear = noAnchor ? 0 : F_rod / F_Rdu, u_emb = h_ef_req / g.h_ef,
     u_plate = isPlate ? t_pl_req / g.t_pl : 0;
@@ -298,7 +353,7 @@ export function compute(g: Inputs): Results {
     ...(isPlate ? [u_plate] : []), ...(use_lug ? [u_lug] : [])];
   const allOk = checks.every((u) => u <= 1.0001);
   return {
-    conc: CP, boltXY, barXY, n_v_eff, e_h, e_s, c_bolt, boltFits,
+    conc: CP, cover, c_nom, z_re, boltXY, barXY, n_v_eff, e_h, e_s, c_bolt, boltFits,
     fcd, fctd, fbd, fbd_b, fbd_bolt, fyd, eta2_b, eta2_v, eta2_bolt,
     d_bolt, P_bolt, As_bolt, fub, fyb, gMs_b,
     isPlate, isNut, noAnchor, a_eff, a_nut, bond, l_avail, u_bond,

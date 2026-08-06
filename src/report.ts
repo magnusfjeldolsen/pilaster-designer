@@ -1,7 +1,7 @@
 // Sporbar beregningsrapport: symbol -> formel -> innsatte verdier -> resultat -> referanse.
 // Ren data (ingen DOM), slik at den kan enhetstestes og rendres fritt.
 
-import type { Inputs, Results } from "./calc";
+import { EXPOSURE_CLASSES, type Inputs, type Results } from "./calc";
 
 export type DocRow =
   | { kind: "calc"; sym: string; fml: string; sub: string; res: string; ref: string }
@@ -19,6 +19,7 @@ export const SYM: Record<string, string> = {
   a_anch: "a_1,ende", t_pl: "t_plate", fy_pl: "f_y,plate",
   phi_b: "φ_b", n_ben: "n_ben", s_b: "s_b", phi_v: "φ_v", n_v: "n_v",
   use_lug: "skjærnokk", w_lug: "w_lug", h_emb: "h_emb", t_grout: "t_grout", k_lug: "k_lug",
+  exp_class: "eksp.klasse", design_life: "brukstid", dc_dev: "Δc_dev",
   fck: "f_ck", a_cc: "α_cc", a_ct: "α_ct", g_c: "γ_c", fyk: "f_yk", g_s: "γ_s",
   g_Msre: "γ_Ms,re", eta1: "η_1", N_t: "N_Ed,t", N_c: "N_Ed,c", V: "V_Ed",
 };
@@ -32,11 +33,12 @@ export interface InputMeta {
   cmt: string;                // forklaring i rapporten / tooltip i panelet
   kind?: "num" | "sel" | "bool";
   opts?: string[];
+  ref?: string;               // standardhenvisning, vises i «?»-boksen
 }
 
 const M = (k: keyof Inputs, label: string, unit: string, cmt: string,
-  kind: InputMeta["kind"] = "num", opts?: string[]): InputMeta =>
-  ({ k, label, unit, cmt, kind, opts });
+  kind: InputMeta["kind"] = "num", opts?: string[], ref?: string): InputMeta =>
+  ({ k, label, unit, cmt, kind, opts, ref });
 
 export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
   { title: "Geometri", items: [
@@ -52,33 +54,40 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
       "Pilasteren trenger ikke flukte med noen murflate"),
     M("a1p", "Bunnplate a₁", "mm", "bunnplate — lastflatebredde (trykk)"),
     M("s_bolt", "Boltavstand s_bolt", "mm", "senteravstand stag"),
-    M("h_ef", "Innstøping h_ef", "mm", "innstøpingsdybde stag (mutter/plate i bunn)"),
-    M("theta", "Spredningsvinkel θ", "°", "spredningsvinkel endetrykk (fra loddrett)"),
-    M("c_nom", "Overdekning c_nom", "mm", "overdekning") ] },
+    M("h_ef", "Innstøping h_ef", "mm", "innstøpingsdybde stag (mutter/plate i bunn)", "num", undefined, "EC2-4 §7.2.1 (0,75·h_ef effektiv sone)"),
+    M("theta", "Spredningsvinkel θ", "°", "spredningsvinkel endetrykk (fra loddrett)", "num", undefined, "stavverksmodell (STM)"),
+    M("exp_class", "Eksponeringsklasse", "",
+      "bestemmer c_min,dur (EC2 tab. 4.4N) og dermed overdekningen c_nom",
+      "sel", [...EXPOSURE_CLASSES], "EC2 §4.4.1 + tab. 4.4N"),
+    M("design_life", "Brukstid", "år",
+      "dimensjonerende brukstid — 100 år hever konstruksjonsklassen med 2 (tab. 4.3N)", "num", undefined, "EC2 tab. 4.3N"),
+    M("dc_dev", "Δc_dev", "mm", "toleransetillegg på c_min (§4.4.1.3)", "num", undefined, "EC2 §4.4.1.3") ] },
   { title: "Bolter", items: [
     M("n_bolt", "Antall stag", "stk", "antall gjengestag"),
     M("boltsize", "Boltdimensjon", "", "boltdimensjon", "sel"),
     M("grade", "Fasthetsklasse", "", "fasthetsklasse (f_ub=X·100, f_yb=X·100·Y/10)", "sel"),
     M("anchor", "Endeforankring", "",
       "ingen (forankres ved heft, §8.4) · mutter (nøkkelvidde 1,5·d) · plate (a₁ × a₁)",
-      "sel", ["ingen", "mutter", "plate"]),
+      "sel", ["ingen", "mutter", "plate"], "EC2 §6.7 / EC2 §8.4"),
     M("a_anch", "Platebredde a₁", "mm", "sidekant kvadratisk ankerplate — gjelder kun «plate»"),
     M("t_pl", "Platetykkelse", "mm", "platetykkelse (kun ankerplate)"),
     M("fy_pl", "f_y plate", "MPa", "flytegrense plate/stål (S355)") ] },
   { title: "Heftforankring stag (§8.4)", items: [
     M("anch_shape", "Stangform", "", "rett stang (α₁=1,0) eller krok/sløyfe (α₁=0,7)",
-      "sel", ["rett", "krok"]),
+      "sel", ["rett", "krok"], "EC2 tab. 8.2"),
     M("K_anch", "K", "–",
-      "tverrarmering, EC2 fig. 8.4: 0,1 stang inne i bøyd bøyle · 0,05 tverrarmering utenfor · 0"),
-    M("alpha4", "α₄", "–", "sveiset tverrarmering: 1,0 uten sveis, 0,7 med"),
-    M("p_tr", "p", "MPa", "tverrtrykk vinkelrett på spaltebruddflaten"),
+      "tverrarmering, EC2 fig. 8.4: 0,1 stang inne i bøyd bøyle · 0,05 tverrarmering utenfor · 0",
+      "num", undefined, "EC2 fig. 8.4"),
+    M("alpha4", "α₄", "–", "sveiset tverrarmering: 1,0 uten sveis, 0,7 med", "num", undefined, "EC2 tab. 8.2"),
+    M("p_tr", "p", "MPa", "tverrtrykk vinkelrett på spaltebruddflaten", "num", undefined, "EC2 tab. 8.2"),
     M("k_bd_bolt", "k_bd stag", "–",
       "heftkoeffisient i f_bd = k_bd·η₁·η₂·f_ctd. 2,25 gjelder kamstål (EC2 §8.4.2); " +
-      "1,90 anbefales for gjengestang (Betongelementboka B19 pkt. 19.3.4)") ] },
+      "1,90 anbefales for gjengestang (Betongelementboka B19 pkt. 19.3.4)",
+      "num", undefined, "Betongelementboka B19 19.3.4") ] },
   { title: "Armering", items: [
-    M("phi_b", "Bøyle Ø", "mm", "bøylediameter"),
-    M("n_ben", "Bøyleben n_ben", "stk", "bøyleben som krysser bruddflate/lag"),
-    M("s_b", "Bøyleavstand s_b", "mm", "senteravstand bøyler (valgt)"),
+    M("phi_b", "Bøyle Ø", "mm", "bøylediameter", "num", undefined, "EC2-4 §7.2.1 (≤ 16 mm)"),
+    M("n_ben", "Bøyleben n_ben", "stk", "bøyleben som krysser bruddflate/lag", "num", undefined, "EC2-4 §7.2.1"),
+    M("s_b", "Bøyleavstand s_b", "mm", "senteravstand bøyler (valgt)", "num", undefined, "dimensjonerende resultat"),
     M("phi_v", "Oppstikk Ø", "mm", "diameter oppstikkende jern"),
     M("n_v", "Antall oppstikk", "stk", "antall oppstikkende jern") ] },
   { title: "Skjærnokk", items: [
@@ -86,22 +95,63 @@ export const INPUT_GROUPS: { title: string; items: InputMeta[] }[] = [
     M("w_lug", "Nokkbredde", "mm", "nokkbredde (⊥ skjær)"),
     M("h_emb", "Nokkhøyde h_emb", "mm", "effektiv innstøpt høyde av nokk"),
     M("t_grout", "Slissestøp t_grout", "mm", "slissestøp/mørtel over betong"),
-    M("k_lug", "Trykkfaktor k_lug", "–", "trykkfaktor betong foran nokk (§6.7, ≤3)") ] },
+    M("k_lug", "Trykkfaktor k_lug", "–", "trykkfaktor betong foran nokk (§6.7, ≤3)", "num", undefined, "EC2 §6.7") ] },
   { title: "Materialer", items: [
     M("fck", "f_ck", "MPa",
-      "sylinderfasthet betong — f_cm, f_ctm, f_ctk,0.05 og E_cm avledes av denne (tab. 3.1)"),
-    M("a_cc", "α_cc", "–", "NA trykkfaktor"),
-    M("a_ct", "α_ct", "–", "NA strekkfaktor"),
-    M("g_c", "γ_c", "–", "materialfaktor betong"),
+      "sylinderfasthet betong — f_cm, f_ctm, f_ctk,0.05 og E_cm avledes av denne (tab. 3.1)",
+      "num", undefined, "EC2 tab. 3.1"),
+    M("a_cc", "α_cc", "–", "NA trykkfaktor", "num", undefined, "EC2 NA"),
+    M("a_ct", "α_ct", "–", "NA strekkfaktor", "num", undefined, "EC2 NA"),
+    M("g_c", "γ_c", "–", "materialfaktor betong", "num", undefined, "EC2 NA"),
     M("fyk", "f_yk", "MPa", "B500NC"),
-    M("g_s", "γ_s", "–", "materialfaktor armering"),
-    M("g_Msre", "γ_Ms,re", "–", "matfaktor tilleggsarmering (EN 1992-4)"),
-    M("eta1", "η₁ heftforhold", "–", "heftforhold (1,0 god / 0,7 dårlig)") ] },
+    M("g_s", "γ_s", "–", "materialfaktor armering", "num", undefined, "EC2 NA"),
+    M("g_Msre", "γ_Ms,re", "–", "matfaktor tilleggsarmering (EN 1992-4)", "num", undefined, "EC2-4 §4.4.3"),
+    M("eta1", "η₁ heftforhold", "–", "heftforhold (1,0 god / 0,7 dårlig)", "num", undefined, "EC2 §8.4.2") ] },
   { title: "Laster", items: [
     M("N_t", "Aksial strekk N_Ed,t", "kN", "aksial STREKK (lasttilfelle A)"),
     M("N_c", "Aksial trykk N_Ed,c", "kN", "aksial TRYKK (lasttilfelle B)"),
     M("V", "Skjær V_Ed", "kN", "horisontal skjærkraft") ] },
 ];
+
+/* ------------------------------------------------------------------ *
+ * Hvilke inndata som hjelper naar en kontroll ikke gaar opp.          *
+ * Noeklene MAA vaere de samme strengene som C(...) bruker i           *
+ * buildReport() nedenfor - testen "alle LEVERS-noekler finnes som     *
+ * kontroll" holder dem i synk hvis en kontroll doeper om seg.         *
+ * ------------------------------------------------------------------ */
+export type Lever = { k: keyof Inputs; dir: "opp" | "ned" };
+
+export const LEVERS: Record<string, Lever[]> = {
+  "Skjærnokk": [{ k: "w_lug", dir: "opp" }, { k: "h_emb", dir: "opp" }, { k: "fck", dir: "opp" }],
+  "Bøyleavstand": [{ k: "s_b", dir: "ned" }],
+  "Bøylediameter ≤ 16 mm": [{ k: "phi_b", dir: "ned" }],
+  "Flytegrense tilleggsarmering": [{ k: "fyk", dir: "ned" }],
+  "Stagmønster i tverrsnittet": [
+    { k: "b", dir: "opp" }, { k: "h", dir: "opp" }, { k: "s_bolt", dir: "ned" },
+    { k: "n_bolt", dir: "ned" }],
+  "Stål (bøyler)": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "n_ben", dir: "opp" }],
+  "Forankring bøyle": [{ k: "phi_b", dir: "opp" }, { k: "s_b", dir: "ned" }, { k: "fck", dir: "opp" }],
+  "Heftforankring stag": [
+    { k: "h_ef", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "anchor", dir: "opp" }],
+  "α-produkt": [{ k: "s_b", dir: "ned" }, { k: "phi_b", dir: "opp" }],
+  "Endetrykk": [{ k: "a_anch", dir: "opp" }, { k: "fck", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
+  "Platetykkelse": [{ k: "t_pl", dir: "opp" }, { k: "fy_pl", dir: "opp" }],
+  "Aksial (oppstikk)": [{ k: "n_v", dir: "opp" }, { k: "phi_v", dir: "opp" }],
+  "Bolt": [{ k: "boltsize", dir: "opp" }, { k: "grade", dir: "opp" }, { k: "n_bolt", dir: "opp" }],
+  "Innstøping": [
+    { k: "h_ef", dir: "opp" }, { k: "theta", dir: "opp" }, { k: "phi_v", dir: "ned" },
+    { k: "b", dir: "ned" }, { k: "h", dir: "ned" }],
+};
+
+/** Inndata som ville hjulpet paa kontrollene som ikke gaar opp. */
+export function failingLevers(groups: DocGroup[]): Map<keyof Inputs, Lever["dir"]> {
+  const out = new Map<keyof Inputs, Lever["dir"]>();
+  for (const g of groups)
+    for (const r of g.rows)
+      if (r.kind === "check" && !r.ok)
+        for (const lv of LEVERS[r.sym] ?? []) out.set(lv.k, lv.dir);
+  return out;
+}
 
 /** Symbolsk formel per utgangssymbol. */
 export const FML: Record<string, string> = {
@@ -125,6 +175,9 @@ export const FML: Record<string, string> = {
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
   "e_p": "inndata", "utstikk": "e_p+b/2−t_wall/2", "a_eff": "√A_lastflate",
   "e_h": "min |stag − oppstikk| i planet", "e_s": "c_nom+φ_b/2+s_b·(n_lag−1)/2",
+  "S_klasse": "S4 (+2 v/100 år, −1 v/høy fasthet)", "c_min,dur": "tab. 4.4N",
+  "c_min": "max(c_min,b; c_min,dur; 10)", "c_nom": "c_min+Δc_dev",
+  "z_re": "0,75·h_ef",
   "n_stag": "rutenett nx·ny = n_bolt", "n_v,eff": "4 hjørner + fordelt langs sidene",
   "η_2": "1,0 (φ≤32) ellers (132−φ)/100", "f_bd,stag": "k_bd·η₁·η₂·f_ctd",
   "σ_sd,stag": "N_Ed,t/(n_bolt·A_s,bolt)", "l_b,rqd,stag": "(d/4)·(σ_sd/f_bd)",
@@ -155,6 +208,8 @@ export const REF: Record<string, string> = {
   "N_Ed,re": "dim.", "N_Rd,re": "EC2-4 §7.2.1.9", "N_Rd,a": "EC2-4 §7.2.1/EC2 §8.4",
   "s_b,maks": "dim.", "e_p": "geometri", "utstikk": "geometri", "a_eff": "EC2 §6.7",
   "e_h": "geometri", "e_s": "EC2-4 §7.2.2.5", "n_stag": "geometri", "n_v,eff": "geometri",
+  "S_klasse": "EC2 tab. 4.3N", "c_min,dur": "EC2 tab. 4.4N", "c_min": "EC2 §4.4.1.2",
+  "c_nom": "EC2 §4.4.1.1", "z_re": "EC2-4 §7.2.1",
   "η_2": "EC2 §8.4.2", "f_bd,stag": "BEB B19 19.3.4", "σ_sd,stag": "EC2 §8.4.3",
   "l_b,rqd,stag": "EC2 §8.4.3", "c_d": "EC2 §8.4.4 fig. 8.3", "α_1": "EC2 tab. 8.2",
   "α_2": "EC2 tab. 8.2", "α_3": "EC2 tab. 8.2", "α_4": "EC2 tab. 8.2", "α_5": "EC2 tab. 8.2",
@@ -196,7 +251,13 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("n_stag", `${g.n_bolt} stag, s_bolt = ${g.s_bolt}`, `${R.boltXY.length} stk`);
   D("n_v,eff", `ønsket ${g.n_v}`, `${R.n_v_eff} stk`);
   D("e_h", `korteste avstand stag → oppstikk`, `${f1(R.e_h)} mm`);
-  D("e_s", `${g.c_nom}+${g.phi_b}/2+${g.s_b}·(${R.n_lag}−1)/2`, `${f0(R.e_s)} mm`);
+  D("e_s", `${R.c_nom}+${g.phi_b}/2+${g.s_b}·(${R.n_lag}−1)/2`, `${f0(R.e_s)} mm`);
+
+  G("Overdekning avledet av eksponeringsklasse (NS-EN 1992-1-1 §4.4.1)");
+  D("S_klasse", `${g.exp_class}, ${g.design_life} år, C${g.fck}`, `S${R.cover.strClass}`);
+  D("c_min,dur", `${g.exp_class}, S${R.cover.strClass}`, `${f0(R.cover.cMinDur)} mm`);
+  D("c_min", `max(${f0(R.cover.cMinB)}; ${f0(R.cover.cMinDur)}; 10)`, `${f0(R.cover.cMin)} mm`);
+  D("c_nom", `${f0(R.cover.cMin)}+${g.dc_dev}`, `${f0(R.c_nom)} mm`);
 
   G("Bolt fra dimensjon & klasse");
   D("A_s,bolt", `π/4·(${R.d_bolt}−0,9382·${R.P_bolt})²`, `${f0(R.As_bolt)} mm²`);
@@ -205,11 +266,12 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("a_eff", ANCHOR_SUB(g, R), R.noAnchor ? "ingen endeforankring" : `${f0(R.a_eff)} mm`);
 
   G("Fagverk-geometri (indre arm z)");
-  D("d_eff", `${g.h}−${g.c_nom}−${g.phi_v}/2`, `${f0(R.d_eff)} mm`);
+  D("d_eff", `${g.h}−${R.c_nom}−${g.phi_v}/2`, `${f0(R.d_eff)} mm`);
   D("z", `0,9·${f0(R.d_eff)}`, `${f0(R.z)} mm`);
 
   G("Effektiv sone & bøylelag");
-  D("h_sone", `min(${g.h_ef}−${g.c_nom}; 1,5·${g.h})`, `${f0(R.h_sone)} mm`);
+  D("z_re", `0,75·${g.h_ef}`, `${f0(R.z_re)} mm`);
+  D("h_sone", `${f0(R.z_re)}−(${f0(R.c_nom)}+${g.phi_b}/2)`, `${f0(R.h_sone)} mm`);
   D("n_lag", `⌊${f0(R.h_sone)}/${g.s_b}⌋+1`, `${f0(R.n_lag)} stk`);
   D("A_s,re", `${g.n_ben}·${f0(R.n_lag)}·${f0(R.A_phb)}`, `${f0(R.A_s_re)} mm²`);
 
@@ -257,7 +319,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
     D("l_b,min", `max(0,3·${f0(B.lb_rqd)}; 10·${R.d_bolt}; 100)`, `${f0(B.lb_min)} mm`);
     D("l_bd", `max(${f3(B.a1 * B.a2 * B.a3 * B.a4 * B.a5)}·${f0(B.lb_rqd)}; ${f0(B.lb_min)})`,
       `${f0(B.lbd)} mm`);
-    D("l_heft", `${g.h_ef}−${g.c_nom}`, `${f0(R.l_avail)} mm`);
+    D("l_heft", `${g.h_ef}−${R.c_nom}`, `${f0(R.l_avail)} mm`);
   }
 
   G("Omfaring stag→oppstikk & innstøping (NS-EN 1992-1-1 §8.7 / STM)");
@@ -265,7 +327,7 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   D("l_b,rqd", `(${g.phi_v}/4)(${f0(R.sig_sd)}/${f2(R.fbd)})`, `${f0(R.lb_rqd)} mm`);
   D("l_0", `${f2(R.a6)}·${f0(R.lb_rqd)}`, `${f0(R.l0)} mm`);
   D("l_spred", `${f0(R.e_h)}/tan ${g.theta}°`, `${f0(R.l_spread)} mm`);
-  D("h_ef,nødv", `${f0(R.l_spread)}+${f0(R.l0)}+${g.c_nom}`, `${f0(R.h_ef_req)} mm`);
+  D("h_ef,nødv", `${f0(R.l_spread)}+${f0(R.l0)}+${R.c_nom}`, `${f0(R.h_ef_req)} mm`);
 
   G("Bøyler — dimensjonerende & kapasitet (NS-EN 1992-4 §7.2.1)");
   D("N_re,A", `${f1(R.T_nut)}+${f1(R.N_reV)}`, `${f1(R.N_reA)} kN`);
@@ -282,8 +344,11 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
       R.u_lug <= 1, "EC2 §6.7");
   C("Bøyleavstand", `valgt s_b ${f0(g.s_b)} ≤ s_b,maks ${f0(R.s_b_max)} mm`,
     g.s_b <= R.s_b_max, "dim.");
+  C("Bøylediameter ≤ 16 mm", `φ_b ${f0(g.phi_b)} ≤ 16 mm (krav til tilleggsarmering)`,
+    g.phi_b <= 16, "EC2-4 §7.2.1");
+  C("Flytegrense tilleggsarmering", `f_yk ${f0(g.fyk)} ≤ 500 MPa`, g.fyk <= 500, "EC2-4 §7.2.1");
   C("Stagmønster i tverrsnittet",
-    `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(g.c_nom)} mm` +
+    `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(R.c_nom)} mm` +
     ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt)})`, R.boltFits, "geometri");
   C("Stål (bøyler)", `N_Ed,re ${f1(R.N_re)} ≤ N_Rd,re ${f1(R.N_Rd_re)} kN  (u=${f2(R.u_stal)})`,
     R.u_stal <= 1, "EC2-4 §7.2.1.9");

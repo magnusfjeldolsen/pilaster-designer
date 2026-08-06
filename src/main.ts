@@ -3,7 +3,8 @@ import { buildModel, type ElementSpec } from "./model";
 import { Viewer } from "./viewer";
 import { exportIFC } from "./ifc";
 import {
-  INPUT_GROUPS, SYM, buildReport, ASSUMPTIONS_HTML, type InputMeta, type DocGroup,
+  INPUT_GROUPS, SYM, buildReport, failingLevers, ASSUMPTIONS_HTML,
+  type InputMeta, type DocGroup,
 } from "./report";
 import { drawPlan, drawSection, MECHS, MECH_TEXT, type Mech } from "./sketch";
 
@@ -32,6 +33,21 @@ function optsFor(f: InputMeta): string[] {
   return [];
 }
 
+/** «?»-boks med forklaringen og standardhenvisningen fra INPUT_GROUPS.
+ *  Ett sted aa vedlikeholde: teksten deles med forutsetningstabellen i rapporten. */
+function helpBadge(f: InputMeta): HTMLElement {
+  const q = document.createElement("span");
+  q.className = "q"; q.textContent = "?"; q.tabIndex = 0;
+  q.setAttribute("role", "button");
+  q.setAttribute("aria-label", `Hjelp: ${f.label}`);
+  const pop = document.createElement("span");
+  pop.className = "qp";
+  pop.innerHTML = `<b>${esc(SYM[f.k as string] ?? String(f.k))}</b>${f.unit ? ` [${esc(f.unit)}]` : ""}` +
+    `<br>${esc(f.cmt)}` + (f.ref ? `<em>${esc(f.ref)}</em>` : "");
+  q.appendChild(pop);
+  return q;
+}
+
 function renderInputs() {
   const host = $("#inputs"); host.innerHTML = "";
   for (const grp of INPUT_GROUPS) {
@@ -42,7 +58,8 @@ function renderInputs() {
       row.className = "row" + (f.kind === "bool" ? " check" : "");
       const lab = document.createElement("label");
       lab.textContent = f.label;
-      lab.title = `${SYM[f.k as string] ?? f.k} — ${f.cmt}${f.unit ? ` [${f.unit}]` : ""}`;
+      lab.appendChild(helpBadge(f));
+      row.dataset.k = String(f.k);
       row.appendChild(lab);
       let ctrl: HTMLElement;
       if (f.kind === "sel") {
@@ -205,11 +222,31 @@ function renderActive() {
   if (tab === "doc") renderDoc();
 }
 
+/** Marker inndata som ville hjulpet paa kontrollene som ikke gaar opp. */
+function renderHints() {
+  const levers = failingLevers(buildReport(v, R));
+  for (const row of document.querySelectorAll<HTMLElement>("#panel .row")) {
+    const k = row.dataset.k as keyof Inputs | undefined;
+    const dir = k ? levers.get(k) : undefined;
+    row.classList.toggle("hint", !!dir);
+    const old = row.querySelector(".arrow");
+    if (old) old.remove();
+    if (dir) {
+      const a = document.createElement("span");
+      a.className = "arrow";
+      a.textContent = dir === "opp" ? "↑" : "↓";
+      a.title = `Ø${dir === "opp" ? "k" : "reduser"} denne for å få utnyttelsen under 1,0`;
+      row.querySelector("label")!.appendChild(a);
+    }
+  }
+}
+
 function refresh() {
   R = compute(v);
   els = buildModel(v, R);
   viewer.setModel(els, (m) => shown.has(m));
   renderResults();
+  renderHints();
   renderActive();
 }
 

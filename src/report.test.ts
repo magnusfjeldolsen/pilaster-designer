@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { compute, DEFAULTS, type Inputs } from "./calc";
-import { INPUT_GROUPS, SYM, FML, REF, buildReport } from "./report";
+import { compute, coverFromExposure, DEFAULTS, type Inputs } from "./calc";
+import { INPUT_GROUPS, LEVERS, SYM, FML, REF, buildReport, failingLevers } from "./report";
 import { drawPlan, drawSection, MECHS } from "./sketch";
 
 const allMeta = INPUT_GROUPS.flatMap((g) => g.items);
@@ -136,5 +136,62 @@ describe("plantegningens skala", () => {
       return +drawPlan(v, compute(v), "shear").match(/viewBox="0 0 \d+ (\d+)"/)![1];
     };
     expect(vb(600)).toBeGreaterThan(vb(0));
+  });
+});
+
+describe("hjelpetekster og hint", () => {
+  it("alle LEVERS-noekler finnes som en faktisk kontroll", () => {
+    const R = compute(DEFAULTS);
+    // samle kontrollnavn over flere konfigurasjoner slik at betingede kontroller er med
+    const names = new Set<string>();
+    for (const v of [DEFAULTS, { ...DEFAULTS, use_lug: true }, { ...DEFAULTS, anchor: "ingen" as const }])
+      for (const g of buildReport(v, compute(v)))
+        for (const r of g.rows) if (r.kind === "check") names.add(r.sym);
+    const orphan = Object.keys(LEVERS).filter((k) => !names.has(k));
+    expect(orphan, "LEVERS peker paa kontroller som ikke finnes").toEqual([]);
+    void R;
+  });
+
+  it("alle levers peker paa felt som finnes i panelet", () => {
+    const known = new Set(INPUT_GROUPS.flatMap((g) => g.items).map((m) => m.k));
+    for (const [check, levers] of Object.entries(LEVERS))
+      for (const lv of levers)
+        expect(known.has(lv.k), `${check} -> ${String(lv.k)}`).toBe(true);
+  });
+
+  it("failingLevers gir hint kun for kontroller som ryker", () => {
+    const ok = { ...DEFAULTS, h_ef: 1400, s_b: 60, phi_b: 16, b: 600, h: 600 };
+    expect(compute(ok).allOk).toBe(true);
+    expect(failingLevers(buildReport(ok, compute(ok))).size).toBe(0);
+    // default har for liten innstoping -> h_ef skal foreslaas okt
+    const bad = failingLevers(buildReport(DEFAULTS, compute(DEFAULTS)));
+    expect(bad.get("h_ef")).toBe("opp");
+  });
+
+  it("hvert inputfelt har en forklaring til «?»-boksen", () => {
+    for (const m of INPUT_GROUPS.flatMap((g) => g.items)) {
+      expect(m.cmt.length, `cmt for ${String(m.k)}`).toBeGreaterThan(5);
+      if (m.ref !== undefined) expect(m.ref.length).toBeGreaterThan(2);
+    }
+  });
+});
+
+describe("overdekning fra eksponeringsklasse (EC2 §4.4.1)", () => {
+  it("XD1/XS1, C35, 50 aar -> S4, c_min,dur 35, c_nom 45", () => {
+    const c = coverFromExposure("XD1/XS1", 35, 50, 12, 10);
+    expect(c.strClass).toBe(4);
+    expect(c.cMinDur).toBe(35);
+    expect(c.cNom).toBe(45);
+  });
+  it("100 aars brukstid hever konstruksjonsklassen med 2", () => {
+    expect(coverFromExposure("XC4", 25, 100, 12, 10).strClass).toBe(6);
+  });
+  it("hoyere fasthetsklasse gir én klasse reduksjon", () => {
+    expect(coverFromExposure("XC4", 30, 50, 12, 10).strClass).toBe(4);
+    expect(coverFromExposure("XC4", 40, 50, 12, 10).strClass).toBe(3);
+  });
+  it("XC1 gir mye tynnere overdekning enn XS3", () => {
+    expect(coverFromExposure("XC1", 35, 50, 12, 10).cNom)
+      .toBeLessThan(coverFromExposure("XD3/XS3", 35, 50, 12, 10).cNom);
   });
 });

@@ -12,16 +12,16 @@ const bbox = (els: ReturnType<typeof buildModel>, id: string) => {
 describe("buildModel()", () => {
   it("gir forventet antall elementer (uten nokk)", () => {
     const els = buildModel(DEFAULTS, compute(DEFAULTS));
-    // footing+wall+pilaster(3) + baseplate+stubbe(2) + 4 stag + 4 plate + 8 oppstikk + 5 boyler = 26
-    expect(els.length).toBe(26);
-    expect(els.filter((e) => e.ifcClass === "IfcReinforcingBar").length).toBe(13);
+    // footing+wall+pilaster(3) + baseplate+stubbe(2) + 4 stag + 4 plate + 8 oppstikk + 4 boyler = 25
+    expect(els.length).toBe(25);
+    expect(els.filter((e) => e.ifcClass === "IfcReinforcingBar").length).toBe(12);
     expect(els.filter((e) => e.ifcClass === "IfcMechanicalFastener").length).toBe(4);
     expect(els.filter((e) => e.ifcClass === "IfcPlate").length).toBe(5); // bunnplate + 4 ankerplater
   });
   it("skjaernokk legger til ett element", () => {
     const els = buildModel({ ...DEFAULTS, use_lug: true }, compute({ ...DEFAULTS, use_lug: true }));
     expect(els.some((e) => e.material === "lug")).toBe(true);
-    expect(els.length).toBe(27);
+    expect(els.length).toBe(26);
   });
   it("mutter tegnes som ekte sekskant med noekkelvidde 1,5*d - ikke som plate", () => {
     const v = { ...DEFAULTS, anchor: "mutter" as const };
@@ -187,7 +187,7 @@ describe("moenstre: beregning og modell kan ikke komme ut av synk", () => {
 
   it("oppstikk ligger paa boylens senterlinje, med hjoerner", () => {
     const R = compute(DEFAULTS);
-    const { rxV, ryV } = cageInsets(DEFAULTS);
+    const { rxV, ryV } = cageInsets(DEFAULTS, R.c_nom);
     for (const [x, y] of R.barXY) {
       expect(Math.abs(x) <= rxV + 1e-9 && Math.abs(y) <= ryV + 1e-9).toBe(true);
       // hvert jern staar paa en av de fire sidene
@@ -206,7 +206,7 @@ describe("e_h og e_s avledes av geometrien", () => {
     for (const [bx, by] of R.boltXY)
       for (const [ax, ay] of R.barXY) min = Math.min(min, Math.hypot(bx - ax, by - ay));
     expect(R.e_h).toBeCloseTo(min, 9);
-    expect(R.e_h).toBeCloseTo(36.1, 1);
+    expect(R.e_h).toBeCloseTo(43.1, 1);
   });
 
   it("stoerre tverrsnitt flytter oppstikkene lenger fra stagene", () => {
@@ -216,7 +216,7 @@ describe("e_h og e_s avledes av geometrien", () => {
 
   it("e_s er dybden til boylegruppas tyngdepunkt", () => {
     const R = compute(DEFAULTS);
-    expect(R.e_s).toBeCloseTo(DEFAULTS.c_nom + DEFAULTS.phi_b / 2
+    expect(R.e_s).toBeCloseTo(R.c_nom + DEFAULTS.phi_b / 2
       + DEFAULTS.s_b * (R.n_lag - 1) / 2, 9);
     // tettere boyler -> flere lag, men lagene ligger naermere hverandre
     const dense = compute({ ...DEFAULTS, s_b: 50 });

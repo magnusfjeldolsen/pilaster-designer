@@ -27,28 +27,30 @@ describe("compute() – materialer og bolt", () => {
 describe("compute() – geometri og fagverk", () => {
   const R = compute(DEFAULTS);
   it("indre arm z = 0,9*d_eff", () => {
-    expect(R.d_eff).toBeCloseTo(337.5, 1);
-    expect(R.z).toBeCloseTo(303.75, 1);
+    expect(R.d_eff).toBeCloseTo(342.5, 1);
+    expect(R.z).toBeCloseTo(308.25, 1);
   });
   it("effektiv sone og antall boylelag", () => {
-    expect(R.h_sone).toBe(450);
-    expect(R.n_lag).toBe(5);
+    // EC2-4: kun armering innenfor 0,75*h_ef er effektiv -> sonen slutter der
+    expect(R.z_re).toBe(0.75 * DEFAULTS.h_ef);              // 375 mm
+    expect(R.h_sone).toBe(324);                             // 375 - (45 + 6)
+    expect(R.n_lag).toBe(4);                                // var 5 med gammel sone
   });
   it("e_s avledes av boylegruppa: c+phi_b/2 + s_b*(n_lag-1)/2", () => {
-    expect(R.e_s).toBeCloseTo(50 + 6 + 100 * (5 - 1) / 2, 6);   // = 256
+    expect(R.e_s).toBeCloseTo(R.c_nom + 6 + 100 * (R.n_lag - 1) / 2, 6);   // = 201
     expect(R.e_s_eff).toBe(R.e_s);                              // uten nokk
   });
   it("skjaertie N_re,V = V*(1+e_s/z) med avledet e_s", () => {
     expect(R.N_reV).toBeCloseTo(DEFAULTS.V * (1 + R.e_s / R.z), 6);
-    expect(R.N_reV).toBeCloseTo(276.4, 0);   // var 224,1 med e_s = 150 lagt inn
+    expect(R.N_reV).toBeCloseTo(247.8, 0);   // var 224,1 med e_s = 150 lagt inn
   });
   it("spaltestrekk fra endeforankring med avledet e_h", () => {
     expect(R.T_nut).toBeCloseTo(0.25 * (1 - R.a_eff / R.a_spread_n) * DEFAULTS.N_t, 6);
-    expect(R.T_nut).toBeCloseTo(37.5, 0);    // var 66,7 med e_h = 120 lagt inn
+    expect(R.T_nut).toBeCloseTo(41.8, 0);    // var 66,7 med e_h = 120 lagt inn
   });
   it("dimensjonerende boylestrekk (LT A styrer)", () => {
     expect(R.govA).toBe(true);
-    expect(R.N_re).toBeCloseTo(314.0, 0);    // var 290,8
+    expect(R.N_re).toBeCloseTo(289.6, 0);    // var 290,8
   });
 });
 
@@ -92,7 +94,7 @@ describe("compute() – endeforankring: ingen / mutter / plate", () => {
     const R = compute(DEFAULTS);
     expect(R.isPlate).toBe(true);
     expect(R.a_eff).toBeCloseTo(DEFAULTS.a_anch, 6);
-    expect(R.T_nut).toBeCloseTo(37.5, 0);                        // med avledet e_h
+    expect(R.T_nut).toBeCloseTo(41.8, 0);                        // med avledet e_h
   });
 
   it("mindre lastflate (mutter) gir stoerre spaltestrekk enn plate", () => {
@@ -149,7 +151,7 @@ describe("compute() – heftforankring av stag (EC2 §8.4)", () => {
   });
 
   it("kontrollen er l_bd <= h_ef - c_nom", () => {
-    expect(R.l_avail).toBeCloseTo(v.h_ef - v.c_nom, 6);
+    expect(R.l_avail).toBeCloseTo(v.h_ef - R.c_nom, 6);
     expect(R.u_bond).toBeCloseTo(B.lbd / R.l_avail, 6);
     const deep = compute({ ...v, h_ef: 3000 });
     expect(deep.u_bond).toBeLessThan(1);
@@ -228,7 +230,7 @@ describe("stagmoensteret maa faa plass i tverrsnittet", () => {
   it("6 stag med samme s_bolt sprenger tverrsnittet -> ikke OK", () => {
     const R = compute({ ...DEFAULTS, n_bolt: 6 });
     expect(R.boltXY.length).toBe(6);
-    expect(R.c_bolt).toBeLessThan(DEFAULTS.c_nom);   // stagene naar betongflaten
+    expect(R.c_bolt).toBeLessThan(R.c_nom);   // stagene naar betongflaten
     expect(R.boltFits).toBe(false);
     expect(R.allOk).toBe(false);                     // slaar ut i totalvurderingen
   });

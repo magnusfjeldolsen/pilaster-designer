@@ -85,7 +85,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   const Lw = Math.max(3 * v.h, v.h + 2 * v.t_wall + 400); // ringmur-lengde langs Y
   const tFoot = 400;
   const tbp = 25;                              // bunnplatetykkelse
-  const cS = v.c_nom + v.phi_b / 2;            // boyle-senterlinje innrykk
+  const cS = R.c_nom + v.phi_b / 2;            // boyle-senterlinje innrykk
 
   const push = (
     id: string, name: string, ifcClass: ElementSpec["ifcClass"],
@@ -154,7 +154,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
 
   // ---- Oppstikkende jern (hjorner + fordelt langs sidene) ----
   const barXY = R.barXY;
-  const barTop = -(v.c_nom + v.phi_b + v.phi_v / 2), barBot = -v.H_pil - 150;
+  const barTop = -(R.c_nom + v.phi_b + v.phi_v / 2), barBot = -v.H_pil - 150;
   barXY.forEach(([x, y], i) =>
     pushP(`bar${i}`, `Oppstikk O${v.phi_v} #${i + 1}`, "IfcReinforcingBar", "bar",
       { kind: "sweep", radius: v.phi_v / 2, path: [[x, y, barTop], [x, y, barBot]] }));
@@ -162,7 +162,7 @@ export function buildModel(v: Inputs, R: Results): ElementSpec[] {
   // ---- Boyler (n_lag lukkede rektangler i effektiv sone) ----
   const rxx = hx - cS, ryy = hy - cS;
   for (let k = 0; k < R.n_lag; k++) {
-    const z = -(v.c_nom + v.phi_b / 2) - k * v.s_b;
+    const z = -(R.c_nom + v.phi_b / 2) - k * v.s_b;
     if (z < -v.H_pil + 10) break;
     const rb = Math.max(2 * v.phi_b, 15);   // bøyeradius (mandrel)
     pushP(`stirrup${k}`, `Boyle O${v.phi_b} #${k + 1}`, "IfcReinforcingBar", "stirrup",
