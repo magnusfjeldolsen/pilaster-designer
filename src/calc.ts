@@ -206,6 +206,7 @@ export interface Results {
   use_lug: boolean; e_s_eff: number; N_reV: number; A_lug: number; V_Rd_lug: number; u_lug: number;
   a_spread_n: number; T_nut: number; a_spread_p: number; T_plate: number;
   N_reA: number; N_reB: number; N_re: number; N_Rd_re: number; l1: number; N_Rd_a: number;
+  lbd_v: number; l_trans: number;
   n_lag_req: number; s_b_max: number; N_Rd_v: number; N_Rd_s: number; F_rod: number;
   Ac0: number; Ac1: number; F_Rdu: number; p_bear: number; c_pl: number; t_pl_req: number;
   sig_sd: number; lb_rqd: number; a6: number; l0: number; l_spread: number; h_ef_req: number;
@@ -330,46 +331,83 @@ export function compute(g: Inputs): Results {
   const boltsInProfile = boltXY.filter(([x, y]) =>
     profileContains(g.profile, g.profile_rot, x, y)).length;
   const boltsClearProfile = boltsInProfile === 0;
+  // ---- Felles alfa-maskineri for §8.4.4 (forankring) og §8.7.3 (omfaring) ----
+  // Samme uttrykk gjelder bade for gjengestaget og for de oppstikkende jernene;
+  // eneste forskjell er om a6 (omfaring) er med og hvilket minimum som gjelder.
+  const solveLength = (
+    phi: number, sigma: number, fbdX: number, cd: number, isStraight: boolean,
+    As: number, a6: number, isLap: boolean,
+  ) => {
+    const lb = (phi / 4) * (sigma / fbdX);
+    // tab. 8.2: a1 = 0,7 for boyd stang KUN naar cd > 3*phi
+    const a1 = isStraight ? 1.0 : (cd > 3 * phi ? 0.7 : 1.0);
+    // tab. 8.2: rette stenger bruker (cd - phi)/phi, boyde bruker (cd - 3*phi)/phi
+    const a2 = clamp07(1 - 0.15 * (cd - (isStraight ? phi : 3 * phi)) / phi);
+    const a4 = g.alpha4, a5 = clamp07(1 - 0.04 * g.p_tr);
+    const sumAstMin = 0.25 * As;
+    const lmin = isLap
+      ? Math.max(0.3 * a6 * lb, 15 * phi, 200)      // §8.7.3 l_0,min
+      : Math.max(0.3 * lb, 10 * phi, 100);          // §8.4.4 (8.6) strekk
+    let L = Math.max(lb, lmin), n_t = 0, sumAst = 0, lam = 0, a3 = 1;
+    for (let i = 0; i < 30; i++) {
+      n_t = Math.max(0, Math.floor(L / g.s_b) + 1);
+      sumAst = n_t * g.n_ben * A_phb;
+      lam = (sumAst - sumAstMin) / As;
+      a3 = clamp07(1 - g.K_anch * lam);
+      const prod = Math.max(a2 * a3 * a5, 0.7);                 // EC2 (8.5)
+      const next = Math.max(a1 * a4 * prod * (isLap ? a6 : 1) * lb, lmin);
+      if (Math.abs(next - L) < 0.05) { L = next; break; }
+      L = 0.5 * (L + next);                                     // demping
+    }
+    const prodRaw = a2 * a3 * a5;
+    return {
+      lb, a1, a2, a3, a4, a5, prodRaw, prod: Math.max(prodRaw, 0.7),
+      prodFloored: prodRaw < 0.7 - 1e-9, lmin, L, n_t, sumAst, sumAstMin, lambda: lam, cd,
+    };
+  };
+
+  // ---- Forankring av gjengestaget ved heft (brukes naar anchor = "ingen") ----
   const straight = g.anch_shape === "rett";
-  // §8.4.4 tabell 8.2: rette stenger cd = min(a/2, c1, c); kroker cd = min(a/2, c1)
+  // §8.4.4 tabell 8.2/fig. 8.3: rette stenger cd = min(a/2, c1, c); kroker cd = min(a/2, c1)
   const cd = straight ? Math.min(a_clear / 2, c_edge, c_side) : Math.min(a_clear / 2, c_edge);
-  const lb_rqd_bolt = (d_bolt / 4) * (sig_bolt / fbd_bolt);
-  const lb_min_bolt = Math.max(0.3 * lb_rqd_bolt, 10 * d_bolt, 100);   // strekk
-  const ba1 = straight ? 1.0 : 0.7;
-  const ba2 = clamp07(1 - 0.15 * (cd - d_bolt) / d_bolt);
-  const ba4 = g.alpha4, ba5 = clamp07(1 - 0.04 * g.p_tr);
-  const sumAstMin = 0.25 * As_l;
-  // Antall boylelag langs l_bd avhenger av l_bd selv -> dempet fikspunkt-iterasjon.
-  let lbd = Math.max(lb_rqd_bolt, lb_min_bolt);
-  let n_tvers = 0, sumAst = 0, lambda = 0, ba3 = 1;
-  for (let i = 0; i < 30; i++) {
-    n_tvers = Math.max(0, Math.floor(lbd / g.s_b) + 1);
-    sumAst = n_tvers * g.n_ben * A_phb;
-    lambda = (sumAst - sumAstMin) / As_l;
-    ba3 = clamp07(1 - g.K_anch * lambda);
-    const prod = Math.max(ba2 * ba3 * ba5, 0.7);              // EC2 (8.5)
-    const next = Math.max(ba1 * ba4 * prod * lb_rqd_bolt, lb_min_bolt);
-    if (Math.abs(next - lbd) < 0.05) { lbd = next; break; }
-    lbd = 0.5 * (lbd + next);                            // demping mot oscillasjon
-  }
-  const alphaProdRaw = ba2 * ba3 * ba5;
-  const alphaProd = Math.max(alphaProdRaw, 0.7);
+  const SB = solveLength(d_bolt, sig_bolt, fbd_bolt, cd, straight, As_l, 1, false);
   const bond: BondAnchorage = {
     phi: d_bolt, sigma_sd: sig_bolt, eta2: eta2_bolt, fbd: fbd_bolt,
-    a_clear, c_side, c_edge, cd, n_tvers, sumAst, sumAstMin, lambda,
-    a1: ba1, a2: ba2, a3: ba3, a4: ba4, a5: ba5,
-    alphaProdRaw, alphaProd, prodFloored: alphaProdRaw < 0.7 - 1e-9,
-    lb_rqd: lb_rqd_bolt, lb_min: lb_min_bolt, lbd,
+    a_clear, c_side, c_edge, cd, n_tvers: SB.n_t, sumAst: SB.sumAst,
+    sumAstMin: SB.sumAstMin, lambda: SB.lambda,
+    a1: SB.a1, a2: SB.a2, a3: SB.a3, a4: SB.a4, a5: SB.a5,
+    alphaProdRaw: SB.prodRaw, alphaProd: SB.prod, prodFloored: SB.prodFloored,
+    lb_rqd: SB.lb, lb_min: SB.lmin, lbd: SB.L,
   };
-  const l_avail = Math.max(g.h_ef - c_nom, 1e-6);      // tilgjengelig heftlengde
-  const u_bond = noAnchor ? lbd / l_avail : 0;
-  const sig_sd = Math.min(F_rod * 1000 / A_v1, fyd);
-  const lb_rqd = (g.phi_v / 4) * (sig_sd / fbd);
-  const a6 = 1.5;
-  const l0 = Math.max(a6 * lb_rqd, 15 * g.phi_v, 200);
+  const l_avail = Math.max(g.h_ef - c_nom, 1e-6);
+  const u_bond = noAnchor ? SB.L / l_avail : 0;
+
+  // ---- Overfoering stag -> oppstikkende jern, og noedvendig innstoping ----
+  // Spenningen i oppstikkene: HELE strekket fordeles paa ALLE oppstikkene, ikke
+  // paa ett jern per stag. Samme grunnlag som N_Rd,v bruker.
+  const sig_sd = Math.min(g.N_t * 1000 / (n_v_eff * A_v1), fyd);
+  // overdekning/avstand for oppstikkene (rette stenger)
+  let sMinV = Infinity;
+  for (let i = 0; i < barXY.length; i++)
+    for (let j = i + 1; j < barXY.length; j++)
+      sMinV = Math.min(sMinV, Math.hypot(barXY[i][0] - barXY[j][0], barXY[i][1] - barXY[j][1]));
+  const a_clear_v = Math.max((Number.isFinite(sMinV) ? sMinV : 0) - g.phi_v, 0);
+  const c_v = c_nom + g.phi_b;                       // fra betongflate til jernets overflate
+  const cd_v = Math.min(a_clear_v / 2, c_v);
+  const As_v = n_v_eff * A_v1;
+  const a6 = 1.5;                                    // §8.7.3 tab. 8.3, 100 % skjoetet
+  const LAP = solveLength(g.phi_v, sig_sd, fbd, cd_v, true, As_v, a6, true);
+  const ANC = solveLength(g.phi_v, sig_sd, fbd, cd_v, true, As_v, 1, false);
+  const l0 = LAP.L, lbd_v = ANC.L;
+  const lb_rqd = LAP.lb;
   const tan = Math.tan(g.theta * PI / 180);
   const l_spread = e_h / (tan || 1e-9);
-  const h_ef_req = l_spread + l0 + c_nom;
+  // UTEN endeforankring maa stagkraften skjoetes over i oppstikkene -> omfaring l_0.
+  // MED endeforankring innfoeres kraften ved trykk mot plata/mutteren; da er det
+  // ingen skjoet, bare krav om at oppstikkene FORANKRES for kraften de tar opp
+  // (Betongelementboka B19 19.7.2.2: kapasiteten regnes uten heft langs stangen).
+  const l_trans = noAnchor ? l0 : lbd_v;
+  const h_ef_req = l_spread + l_trans + c_nom;
   const u_stal = N_re / N_Rd_re, u_ank = N_re / N_Rd_a, u_ax = g.N_t / N_Rd_v,
     u_bolt = g.N_t / N_Rd_s, u_bear = noAnchor ? 0 : F_rod / F_Rdu, u_emb = h_ef_req / g.h_ef,
     u_plate = isPlate ? t_pl_req / g.t_pl : 0;
@@ -389,7 +427,7 @@ export function compute(g: Inputs): Results {
     A_phb, A_v1, d_eff, z, h_sone, n_lag, A_s_re, use_lug, e_s_eff, N_reV, A_lug, V_Rd_lug, u_lug,
     a_spread_n, T_nut, a_spread_p, T_plate, N_reA, N_reB, N_re, N_Rd_re, l1, N_Rd_a,
     n_lag_req, s_b_max, N_Rd_v, N_Rd_s, F_rod, Ac0, Ac1, F_Rdu, p_bear, c_pl, t_pl_req,
-    sig_sd, lb_rqd, a6, l0, l_spread, h_ef_req,
+    sig_sd, lb_rqd, a6, l0, lbd_v, l_trans, l_spread, h_ef_req,
     u_stal, u_ank, u_ax, u_bolt, u_bear, u_emb, u_plate, govA: N_reA >= N_reB, allOk,
   };
 }

@@ -67,10 +67,12 @@ describe("compute() – 8O25 aksial og lug/plate", () => {
     expect(on.V_Rd_lug).toBeGreaterThan(0);
     expect(on.u_lug).toBeGreaterThan(0);
   });
-  it("default-innstoping er utilstrekkelig (allOk=false)", () => {
+  it("med ankerplate er default-innstopingen rikelig", () => {
     const R = compute(DEFAULTS);
-    expect(R.h_ef_req).toBeGreaterThan(DEFAULTS.h_ef);
-    expect(R.allOk).toBe(false);
+    // Kraften baeres av plata; oppstikkene skal bare FORANKRES, ikke skjoetes.
+    expect(R.h_ef_req).toBeLessThan(DEFAULTS.h_ef);
+    expect(R.h_ef_req).toBeCloseTo(338, 0);
+    expect(R.u_emb).toBeLessThan(1);
   });
   it("okt innstoping + tettere boyler -> allOk=true", () => {
     const good: Inputs = { ...DEFAULTS, h_ef: 900, s_b: 90 };
@@ -139,10 +141,17 @@ describe("compute() – heftforankring av stag (EC2 §8.4)", () => {
       Math.max(B.a1 * B.a2 * B.a3 * B.a4 * B.a5 * B.lb_rqd, B.lb_min), 1);
   });
 
-  it("krok gir alfa_1 = 0,7 og dermed kortere l_bd enn rett stang", () => {
-    const hook = compute({ ...v, anch_shape: "krok" }).bond;
-    expect(hook.a1).toBe(0.7);
-    expect(hook.lbd).toBeLessThanOrEqual(B.lbd);
+  it("krok gir alfa_1 = 0,7 KUN naar c_d > 3*phi (tab. 8.2)", () => {
+    // default: c_d = 85 mm < 3*30 = 90 -> ingen reduksjon, tross krok
+    const tight = compute({ ...v, anch_shape: "krok" }).bond;
+    expect(tight.cd).toBeLessThan(3 * 30);
+    expect(tight.a1).toBe(1.0);
+    // romsligere tverrsnitt og stagavstand -> c_d > 3*phi -> 0,7 slaar inn
+    const roomy = compute({
+      ...v, anch_shape: "krok", b: 600, h: 600, s_bolt_x: 240, s_bolt_y: 240,
+    }).bond;
+    expect(roomy.cd).toBeGreaterThan(3 * 30);
+    expect(roomy.a1).toBe(0.7);
   });
 
   it("tverrtrykk og sveiset tverrarmering reduserer l_bd", () => {
@@ -284,5 +293,47 @@ describe("boltavstand kan variere ⊥V og ∥V", () => {
   it("for stor avstand langs V sprenger tverrsnittet", () => {
     expect(compute({ ...DEFAULTS, s_bolt_y: 400 }).boltFits).toBe(false);
     expect(compute({ ...DEFAULTS, s_bolt_y: 200 }).boltFits).toBe(true);
+  });
+});
+
+describe("overfoering stag -> oppstikk og noedvendig innstoping", () => {
+  it("sigma_sd fordeler strekket paa ALLE oppstikkene, ikke ett per stag", () => {
+    const R = compute(DEFAULTS);
+    expect(R.sig_sd).toBeCloseTo(DEFAULTS.N_t * 1000 / (R.n_v_eff * R.A_v1), 6);
+    // samme grunnlag som N_Rd,v -> utnyttelsen stemmer med spenningen
+    expect(R.sig_sd / R.fyd).toBeCloseTo(R.u_ax, 6);
+    // dobbelt saa mange oppstikk halverer spenningen
+    expect(compute({ ...DEFAULTS, n_v: 16 }).sig_sd).toBeCloseTo(R.sig_sd / 2, 0);
+  });
+
+  it("endeforankring gir FORANKRING av oppstikkene, ingen omfaring", () => {
+    for (const anchor of ["plate", "mutter"] as const) {
+      const R = compute({ ...DEFAULTS, anchor });
+      expect(R.l_trans).toBeCloseTo(R.lbd_v, 6);
+      expect(R.l_trans).toBeLessThan(R.l0);
+    }
+  });
+
+  it("uten endeforankring maa kraften skjoetes over -> omfaring l_0", () => {
+    const R = compute({ ...DEFAULTS, anchor: "ingen" });
+    expect(R.l_trans).toBeCloseTo(R.l0, 6);
+    expect(R.h_ef_req).toBeGreaterThan(compute(DEFAULTS).h_ef_req);
+  });
+
+  it("h_ef,nodv = spredning + overfoering + overdekning", () => {
+    const R = compute(DEFAULTS);
+    expect(R.h_ef_req).toBeCloseTo(R.l_spread + R.l_trans + R.c_nom, 6);
+  });
+
+  it("l_0 foelger §8.7.3 med alfa-faktorer og 15*phi som minimum", () => {
+    const R = compute(DEFAULTS);
+    expect(R.l0).toBeGreaterThanOrEqual(15 * DEFAULTS.phi_v);
+    expect(R.lbd_v).toBeGreaterThanOrEqual(10 * DEFAULTS.phi_v);
+    expect(R.l0).toBeGreaterThan(R.lbd_v);          // omfaring er alltid lengst
+  });
+
+  it("500 kN med ankerplate krever ikke lenger urimelig innstoping", () => {
+    const R = compute({ ...DEFAULTS, N_t: 500 });
+    expect(R.h_ef_req).toBeLessThan(400);           // var over 900 mm foer
   });
 });

@@ -215,9 +215,10 @@ export const FML: Record<string, string> = {
   "T_mutter": "¼·(1−a₁/a)·N_Ed,t", "T_plate": "¼·(1−a₁/a)·N_Ed,c",
   "N_Rd,v": "n_v·A_v·f_yd", "N_Rd,s": "n_bolt·A_s,bolt·f_ub/γ_Ms",
   "F_Rdu": "A_c0·f_cd·√(A_c1/A_c0) ≤ 3f_cd·A_c0", "t_pl,nødv": "c·√(3p/f_y,plate)",
-  "σ_sd": "N_Ed,t/(n_bolt·A_v) ≤ f_yd",
+  "σ_sd": "N_Ed,t/(n_v·A_v) ≤ f_yd",
   "l_b,rqd": "(φ_v/4)·(σ_sd/f_bd)", "l_0": "α₆·l_b,rqd ≥ l_0,min",
-  "l_spred": "e_h/tan θ", "h_ef,nødv": "l_spred+l_0+c_nom",
+  "l_spred": "e_h/tan θ", "h_ef,nødv": "l_spred+l_overf+c_nom",
+  "l_bd,v": "α₁·α₄·(α₂α₃α₅)·l_b,rqd ≥ l_b,min", "l_overf": "l_0 uten endeforankring, ellers l_bd",
   "N_re,A": "T_mutter+N_Ed,re·V", "N_re,B": "T_plate+N_Ed,re·V",
   "N_Ed,re": "max(N_re,A; N_re,B)", "N_Rd,re": "A_s,re·f_yk/γ_Ms,re",
   "N_Rd,a": "n_ben·n_lag·l₁·π·φ_b·f_bd/α", "s_b,maks": "h_sone/(n_lag,nødv−1)",
@@ -253,6 +254,7 @@ export const REF: Record<string, string> = {
   "t_pl,nødv": "EN 1993-1-8",
   "σ_sd": "EC2 §8.7.3", "l_b,rqd": "EC2 §8.4.3", "l_0": "EC2 §8.7.3",
   "l_spred": "STM 45°", "h_ef,nødv": "STM/§8.7",
+  "l_bd,v": "EC2 §8.4.4", "l_overf": "EC2 §8.4.4/§8.7.3",
   "N_re,A": "superposisjon", "N_re,B": "superposisjon",
   "N_Ed,re": "dim.", "N_Rd,re": "EC2-4 §7.2.1.9", "N_Rd,a": "EC2-4 §7.2.1/EC2 §8.4",
   "s_b,maks": "dim.", "e_p": "geometri", "utstikk": "geometri", "a_eff": "EC2 §6.7",
@@ -375,9 +377,15 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   }
 
   G("Omfaring stag→oppstikk & innstøping (NS-EN 1992-1-1 §8.7 / STM)");
-  D("σ_sd", `${g.N_t}·10³/(${g.n_bolt}·${f0(R.A_v1)})`, `${f0(R.sig_sd)} MPa`);
+  D("σ_sd", `${g.N_t}·10³/(${R.n_v_eff}·${f0(R.A_v1)})`, `${f0(R.sig_sd)} MPa`);
   D("l_b,rqd", `(${g.phi_v}/4)(${f0(R.sig_sd)}/${f2(R.fbd)})`, `${f0(R.lb_rqd)} mm`);
-  D("l_0", `${f2(R.a6)}·${f0(R.lb_rqd)}`, `${f0(R.l0)} mm`);
+  D("l_0", `α-produkt·${f2(R.a6)}·${f0(R.lb_rqd)} (≥ 15φ = ${f0(15 * g.phi_v)})`,
+    `${f0(R.l0)} mm`);
+  D("l_bd,v", `≥ max(0,3·l_b,rqd; 10φ = ${f0(10 * g.phi_v)}; 100)`, `${f0(R.lbd_v)} mm`);
+  D("l_overf", R.noAnchor
+    ? "ingen endeforankring → kraften skjøtes over i oppstikkene (omfaring l₀)"
+    : "endeforankring bærer kraften → oppstikkene skal kun forankres (l_bd)",
+    `${f0(R.l_trans)} mm`);
   D("l_spred", `${f0(R.e_h)}/tan ${g.theta}°`, `${f0(R.l_spread)} mm`);
   D("h_ef,nødv", `${f0(R.l_spread)}+${f0(R.l0)}+${R.c_nom}`, `${f0(R.h_ef_req)} mm`);
 
@@ -528,6 +536,18 @@ export const ASSUMPTIONS_HTML = `
      <code>f_ctk,0.95=1,3·f_ctm</code> og <code>E_cm=22000·(f_cm/10)^0,3</code> avledes av den
      etter NS-EN 1992-1-1 tabell 3.1. Armering B500NC
      (f_yk=500 MPa); γ_c=1,5, γ_s=1,15.</li>
+ <li><b>Overføring fra stag til oppstikk — hvorfor innstøpingsdybden avhenger av
+     endeforankringen:</b> <b>Uten</b> endeforankring må hele stagkraften skjøtes over i de
+     oppstikkende jernene ved heft, og da gjelder omfaringslengde <code>l₀</code> etter
+     NS-EN 1992-1-1 §8.7.3 med <code>α₆</code> for skjøtandel. <b>Med</b> mutter eller ankerplate
+     innføres kraften i stedet ved trykk mot forankringen — det er ingen skjøt, og oppstikkene skal
+     bare <b>forankres</b> for kraften de tar opp, altså <code>l_bd</code> etter §8.4.4.
+     Betongelementboka B19 pkt. 19.7.2.2 sier det samme: med fot regnes kapasiteten
+     «som for kjeglebrudd <i>uten heft langs stangen</i>». Nødvendig innstøping blir dermed
+     <code>h_ef,nødv = e_h/tan θ + l_overf + c_nom</code>, der <code>l_overf</code> er
+     <code>l₀</code> uten endeforankring og <code>l_bd</code> med.
+     Spenningen som legges til grunn er <code>σ_sd = N_Ed,t/(n_v·A_v)</code> — hele strekket
+     fordelt på <b>alle</b> oppstikkene, samme grunnlag som <code>N_Rd,v</code>.</li>
  <li><b>Modellforutsetninger:</b> Leddet søylefot (aksial ± og skjær, uten moment). Bøyler tar spaltestrekk
      (ende + plate) + skjærfagverk <code>V·(1+e_s/z)</code> (konservativ addisjon). Aksialstrekket føres av
      de oppstikkende jernene ned i såla; endetrykket spres θ° (default 45°) ut til jernene, som styrer

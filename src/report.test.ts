@@ -166,9 +166,12 @@ describe("hjelpetekster og hint", () => {
     const ok = { ...DEFAULTS, h_ef: 1400, s_b: 60, phi_b: 16, b: 600, h: 600 };
     expect(compute(ok).allOk).toBe(true);
     expect(failingLevers(buildReport(ok, compute(ok))).size).toBe(0);
-    // default har for liten innstoping -> h_ef skal foreslaas okt
+    // default: forankring av boyler ryker -> boylediameter foreslaas okt
     const bad = failingLevers(buildReport(DEFAULTS, compute(DEFAULTS)));
-    expect(bad.get("h_ef")).toBe("opp");
+    expect(bad.get("phi_b")).toBe("opp");
+    // for grunn innstoping -> h_ef foreslaas okt
+    const shallow = { ...DEFAULTS, h_ef: 250 };
+    expect(failingLevers(buildReport(shallow, compute(shallow))).get("h_ef")).toBe("opp");
   });
 
   it("hvert inputfelt har en forklaring til «?»-boksen", () => {
