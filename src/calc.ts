@@ -1,6 +1,8 @@
 // Beregningsmodul (NS-EN 1992-4) - portert fra regnearket.
 // Ren funksjon: Inputs -> Results. Ingen DOM-avhengighet.
 
+import { profileContains, profileExtent } from "./profiles";
+
 /** Endeforankring av gjengestaget.
  *  "ingen"  - staget er ikke endeforankret; strekket maa forankres ved heft (§8.4)
  *  "mutter" - sekskantmutter, noekkelvidde ~1,5*d (ISO 4032), hoyde ~0,8*d
@@ -198,6 +200,8 @@ export interface Results {
   isPlate: boolean; isNut: boolean; noAnchor: boolean; a_eff: number; a_nut: number;
   bond: BondAnchorage; l_avail: number; u_bond: number;
   c_bolt: number; boltFits: boolean;
+  profExt: [number, number]; plateMargin: number; plateCovers: boolean;
+  boltsClearProfile: boolean; boltsInProfile: number;
   A_phb: number; A_v1: number; d_eff: number; z: number; h_sone: number; n_lag: number; A_s_re: number;
   use_lug: boolean; e_s_eff: number; N_reV: number; A_lug: number; V_Rd_lug: number; u_lug: number;
   a_spread_n: number; T_nut: number; a_spread_p: number; T_plate: number;
@@ -316,6 +320,16 @@ export function compute(g: Inputs): Results {
   // utenfor betongen, og det skal ikke gaa stille forbi.
   const c_bolt = Math.min(g.b / 2 - bxMax, g.h / 2 - byMax) - d_bolt / 2;
   const boltFits = c_bolt >= c_nom - 1e-9;
+
+  // ---- Samsvar mellom staalprofil, bunnplate og boltmoenster (geometri) ----
+  // Profilet inngaar ikke i kapasiteten, men bunnplata maa dekke det, og stagene
+  // kan ikke ligge inne i profiltverrsnittet.
+  const profExt = profileExtent(g.profile, g.profile_rot);
+  const plateMargin = (g.a1p - Math.max(profExt[0], profExt[1])) / 2;
+  const plateCovers = plateMargin >= 0;
+  const boltsInProfile = boltXY.filter(([x, y]) =>
+    profileContains(g.profile, g.profile_rot, x, y)).length;
+  const boltsClearProfile = boltsInProfile === 0;
   const straight = g.anch_shape === "rett";
   // §8.4.4 tabell 8.2: rette stenger cd = min(a/2, c1, c); kroker cd = min(a/2, c1)
   const cd = straight ? Math.min(a_clear / 2, c_edge, c_side) : Math.min(a_clear / 2, c_edge);
@@ -362,11 +376,13 @@ export function compute(g: Inputs): Results {
   // Endetrykk kontrolleres kun med endeforankring; uten den styrer heftforankringen.
   const checks = [u_stal, u_ank, u_ax, u_emb, u_bolt, g.s_b / s_b_max,
     boltFits ? 0 : 99,                                // moensteret maa faa plass
+    plateCovers ? 0 : 99, boltsClearProfile ? 0 : 99, // profil vs plate/stag
     ...(noAnchor ? [u_bond] : [u_bear]),
     ...(isPlate ? [u_plate] : []), ...(use_lug ? [u_lug] : [])];
   const allOk = checks.every((u) => u <= 1.0001);
   return {
     conc: CP, cover, c_nom, z_re, boltXY, barXY, n_v_eff, e_h, e_s, c_bolt, boltFits,
+    profExt, plateMargin, plateCovers, boltsClearProfile, boltsInProfile,
     fcd, fctd, fbd, fbd_b, fbd_bolt, fyd, eta2_b, eta2_v, eta2_bolt,
     d_bolt, P_bolt, As_bolt, fub, fyb, gMs_b,
     isPlate, isNut, noAnchor, a_eff, a_nut, bond, l_avail, u_bond,

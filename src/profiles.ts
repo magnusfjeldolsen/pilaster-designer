@@ -62,6 +62,36 @@ function hProfile(p: Profile): [number, number][] {
   ];
 }
 
+/** Profilets ytre maal i verdensaksene [x = ⊥V, y = ∥V] for gitt rotasjon. */
+export function profileExtent(name: string, rot: number): [number, number] {
+  const p = PROFILES[name] ?? PROFILES[DEFAULT_PROFILE];
+  const swap = Math.round(rot) % 180 !== 0;
+  return swap ? [p.h, p.b] : [p.b, p.h];
+}
+
+/** Punkt-i-polygon (ray casting). */
+function inPoly(pts: [number, number][], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Ligger punktet (relativt profilsenteret) inne i profilets tverrsnitt?
+ *  For HEA betyr det INNE i I-konturen - rommet mellom flensene er altsaa ledig,
+ *  slik at stag godt kan staa der. Hulprofiler regnes massive (se toppen av fila),
+ *  som er riktig her: man kommer uansett ikke til inne i et lukket hulprofil. */
+export function profileContains(name: string, rot: number, x: number, y: number): boolean {
+  const p = PROFILES[name] ?? PROFILES[DEFAULT_PROFILE];
+  const swap = Math.round(rot) % 180 !== 0;
+  const [lx, ly] = swap ? [y, x] : [x, y];       // til profilets lokale akser
+  if (p.fam === "CHS") return Math.hypot(lx, ly) <= p.h / 2;
+  if (p.fam === "HEA") return inPoly(hProfile(p), lx, ly);
+  return Math.abs(lx) <= p.b / 2 && Math.abs(ly) <= p.h / 2;
+}
+
 /**
  * Geometri for soylestubben. Lokal x er profilens b, lokal y er profilens h.
  * rot = 90 dreier profilet en kvart omdreining om egen akse (bytter x og y),

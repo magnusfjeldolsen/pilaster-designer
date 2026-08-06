@@ -142,6 +142,9 @@ export const LEVERS: Record<string, Lever[]> = {
   "s_b": [{ k: "s_b", dir: "ned" }],
   "phi_b_max": [{ k: "phi_b", dir: "ned" }],
   "fyk_max": [{ k: "fyk", dir: "ned" }],
+  "plate_cov": [{ k: "a1p", dir: "opp" }, { k: "profile", dir: "ned" }],
+  "bolt_clear": [
+    { k: "s_bolt_x", dir: "opp" }, { k: "s_bolt_y", dir: "opp" }, { k: "profile", dir: "ned" }],
   "bolt_fit": [
     { k: "b", dir: "opp" }, { k: "h", dir: "opp" }, { k: "s_bolt_x", dir: "ned" }, { k: "s_bolt_y", dir: "ned" },
     { k: "n_bolt", dir: "ned" }],
@@ -264,6 +267,7 @@ export const REF: Record<string, string> = {
 };
 
 const f0 = (x: number) => x.toFixed(0), f1 = (x: number) => x.toFixed(1);
+const esc0 = (s: string) => s;
 const f2 = (x: number) => x.toFixed(2), f3 = (x: number) => x.toFixed(3);
 
 export function buildReport(g: Inputs, R: Results): DocGroup[] {
@@ -395,6 +399,13 @@ export function buildReport(g: Inputs, R: Results): DocGroup[] {
   C("phi_b_max", "Bøylediameter ≤ 16 mm", `φ_b ${f0(g.phi_b)} ≤ 16 mm (krav til tilleggsarmering)`,
     g.phi_b <= 16, "EC2-4 §7.2.1", g.phi_b / 16);
   C("fyk_max", "Flytegrense tilleggsarmering", `f_yk ${f0(g.fyk)} ≤ 500 MPa`, g.fyk <= 500, "EC2-4 §7.2.1", g.fyk / 500);
+  C("plate_cov", "Bunnplate dekker profilet",
+    `a₁ ${f0(g.a1p)} ≥ profil ${f0(R.profExt[0])}×${f0(R.profExt[1])} mm ` +
+    `(margin ${f0(R.plateMargin)} mm rundt)`, R.plateCovers, "geometri");
+  C("bolt_clear", "Stag utenfor profiltverrsnittet",
+    R.boltsClearProfile ? `alle ${R.boltXY.length} stag står klar av ${esc0(g.profile)}`
+      : `${R.boltsInProfile} av ${R.boltXY.length} stag ligger inne i ${esc0(g.profile)}`,
+    R.boltsClearProfile, "geometri");
   C("bolt_fit", "Stagmønster i tverrsnittet",
     `overdekning til ytterste stag ${f0(R.c_bolt)} ≥ c_nom ${f0(R.c_nom)} mm` +
     ` (${R.boltXY.length} stag, s_bolt ${f0(g.s_bolt_x)}×${f0(g.s_bolt_y)})`, R.boltFits, "geometri", R.c_bolt > 0 ? R.c_nom / R.c_bolt : 9);

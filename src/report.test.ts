@@ -311,3 +311,45 @@ describe("staalprofil paa bunnplata (kun visualisering)", () => {
     expect(a.allOk).toBe(b.allOk);
   });
 });
+
+describe("profil, bunnplate og stag maa henge sammen geometrisk", () => {
+  it("HEA 300 paa 300 mm plate dekkes ikke - marginen er null", () => {
+    const R = compute({ ...DEFAULTS, profile: "HEA 300", a1p: 300 });
+    expect(R.profExt).toEqual([300, 290]);
+    expect(R.plateMargin).toBeCloseTo(0, 6);
+    expect(R.plateCovers).toBe(true);          // akkurat, men uten margin
+    const small = compute({ ...DEFAULTS, profile: "HEA 400", a1p: 300 });
+    expect(small.plateCovers).toBe(false);     // profilet stikker utenfor plata
+    expect(small.allOk).toBe(false);
+  });
+
+  it("rommet mellom flensene er ledig for stag", () => {
+    // HEA 300: b=300, h=290. Stag paa ±100 ligger innenfor ytterkonturen,
+    // men mellom flensene og klar av livet -> lovlig plassering.
+    const R = compute({ ...DEFAULTS, profile: "HEA 300", s_bolt_x: 200, s_bolt_y: 200 });
+    expect(R.boltsInProfile).toBe(0);
+    expect(R.boltsClearProfile).toBe(true);
+  });
+
+  it("stag inne i et hulprofil fanges opp", () => {
+    const R = compute({ ...DEFAULTS, profile: "SHS 300x300", s_bolt_x: 100, s_bolt_y: 100 });
+    expect(R.boltsInProfile).toBe(4);
+    expect(R.boltsClearProfile).toBe(false);
+    expect(R.allOk).toBe(false);
+    // stoerre senteravstand flytter dem utenfor
+    expect(compute({ ...DEFAULTS, profile: "SHS 300x300", s_bolt_x: 400, s_bolt_y: 400 })
+      .boltsClearProfile).toBe(true);
+  });
+
+  it("stag midt i livet paa en HEA fanges ogsaa opp", () => {
+    const R = compute({ ...DEFAULTS, profile: "HEA 300", n_bolt: 1 });
+    expect(R.boltXY).toEqual([[0, 0]]);         // ett stag i senter = midt i livet
+    expect(R.boltsClearProfile).toBe(false);
+  });
+
+  it("rotasjon endrer hvilke stag som er i konflikt", () => {
+    const v = { ...DEFAULTS, profile: "RHS 400x200", s_bolt_x: 300, s_bolt_y: 150, a1p: 500 };
+    expect(compute({ ...v, profile_rot: 0 }).boltsClearProfile).toBe(true);
+    expect(compute({ ...v, profile_rot: 90 }).boltsClearProfile).toBe(false);
+  });
+});
